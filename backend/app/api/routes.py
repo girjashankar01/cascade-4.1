@@ -55,9 +55,9 @@ _llm_router: Optional[LLMRouter] = None
 
 def get_llm_router() -> LLMRouter:
     global _llm_router
-    if _llm_router is None:
-        _llm_router = LLMRouter()
-    return _llm_router
+    if _llm_router is not None:
+        return _llm_router
+    return LLMRouter()
 
 
 def set_llm_router(custom_router: Optional[LLMRouter]) -> None:

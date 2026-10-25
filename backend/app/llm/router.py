@@ -42,7 +42,17 @@ class LLMRouter:
     """Orchestrates LLM calls, cache lookup, single retry on invalid JSON/schema, and audit logging."""
 
     def __init__(self, provider: Optional[LLMProvider] = None, db_path: Optional[Path | str] = None):
-        self.provider = provider or OnlineLLMProvider()
+        if provider is not None:
+            self.provider = provider
+        else:
+            import os
+            mode = os.getenv("LLM_MODE", "online").lower()
+            online_provider = os.getenv("LLM_ONLINE_PROVIDER", "").lower()
+            if mode == "local" or online_provider == "ollama":
+                from app.llm.local import LocalLLMProvider
+                self.provider = LocalLLMProvider()
+            else:
+                self.provider = OnlineLLMProvider()
         self.db_path = db_path
 
     def analyze_sources(

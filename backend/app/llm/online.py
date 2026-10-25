@@ -3,10 +3,19 @@
 import json
 import logging
 import os
+from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional
 
+from dotenv import load_dotenv
 import httpx
+
+# Load root .env if not loaded yet
+_root_env = Path(__file__).resolve().parents[3] / ".env"
+if _root_env.exists():
+    load_dotenv(dotenv_path=_root_env)
+else:
+    load_dotenv()
 
 from app.llm.base import LLMProvider, LLMUnavailableError
 
@@ -54,18 +63,25 @@ class OnlineLLMProvider(LLMProvider):
         api_key: Optional[str] = None,
         provider: Optional[str] = None,
         model: Optional[str] = None,
-        timeout_s: float = 30.0,
+        timeout_s: Optional[float] = None,
     ):
-        self.api_key = api_key or os.getenv("LLM_API_KEY", "")
+        self.api_key = api_key if api_key is not None else os.getenv("LLM_API_KEY", "")
         self.provider = (provider or os.getenv("LLM_ONLINE_PROVIDER", "openai")).lower()
-        default_model = "gpt-4o-mini" if self.provider == "openai" else "gemini-2.5-flash"
+        if self.provider == "ollama":
+            default_model = os.getenv("LLM_LOCAL_MODEL", "gemma2:2b")
+        elif self.provider == "openai":
+            default_model = "gpt-4o-mini"
+        else:
+            default_model = "gemini-2.5-flash"
+
         self.model = model or os.getenv("LLM_MODEL", default_model)
-        self.timeout_s = float(os.getenv("LLM_TIMEOUT_S", str(timeout_s)))
-        self.name = f"online-{self.provider}"
+        default_timeout = "60.0" if self.provider == "ollama" else "30.0"
+        self.timeout_s = float(timeout_s if timeout_s is not None else os.getenv("LLM_TIMEOUT_S", default_timeout))
+        self.name = f"local-ollama-{self.model}" if self.provider == "ollama" else f"online-{self.provider}"
 
     def extract_claims(self, prompt: str, sources: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Call external LLM or return structured claims from content."""
-        if not self.api_key:
+        if self.provider != "ollama" and not self.api_key:
             raise LLMUnavailableError("LLM_API_KEY is not configured")
 
         # Prepare payload
@@ -81,17 +97,19 @@ class OnlineLLMProvider(LLMProvider):
 
         user_content = f"SOURCES:\n{json.dumps(sources_payload, indent=2)}\n\nINSTRUCTIONS:\n{prompt}"
 
-        # Standard OpenAI / OpenRouter / compatible endpoint call
-        default_endpoint = (
-            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-            if self.provider == "gemini"
-            else "https://api.openai.com/v1/chat/completions"
-        )
+        # Standard OpenAI / OpenRouter / Ollama compatible endpoint call
+        if self.provider == "ollama":
+            default_endpoint = os.getenv("LLM_LOCAL_ENDPOINT", "http://127.0.0.1:11434/v1/chat/completions")
+        elif self.provider == "gemini":
+            default_endpoint = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        else:
+            default_endpoint = "https://api.openai.com/v1/chat/completions"
         endpoint = os.getenv("LLM_API_ENDPOINT", default_endpoint)
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         body = {
             "model": self.model,
             "messages": [
@@ -111,7 +129,18 @@ class OnlineLLMProvider(LLMProvider):
                 elif response.status_code in (500, 502, 503, 504):
                     raise LLMUnavailableError(f"LLM provider service error (HTTP {response.status_code})")
                 elif response.status_code >= 400:
-                    raise LLMUnavailableError(f"LLM provider returned client error (HTTP {response.status_code})")
+                    err_detail = ""
+                    try:
+                        err_json = response.json()
+                        if isinstance(err_json, dict) and "error" in err_json:
+                            err_info = err_json["error"]
+                            if isinstance(err_info, dict):
+                                err_detail = f": {err_info.get('message', '')}"
+                            elif isinstance(err_info, str):
+                                err_detail = f": {err_info}"
+                    except Exception:
+                        pass
+                    raise LLMUnavailableError(f"LLM provider returned client error (HTTP {response.status_code}){err_detail}")
 
                 response.raise_for_status()
                 data = response.json()

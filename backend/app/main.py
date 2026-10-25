@@ -1,9 +1,18 @@
 """DAO Accountability Engine FastAPI application entry point."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
+
+# Load environment variables from root .env if present
+root_env = Path(__file__).resolve().parents[2] / ".env"
+if root_env.exists():
+    load_dotenv(dotenv_path=root_env)
+else:
+    load_dotenv()
 
 from app.api.routes import router as api_router
 from app.db import init_db
