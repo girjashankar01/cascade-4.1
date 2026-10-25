@@ -175,3 +175,120 @@ def test_sources_and_verifications_read_endpoints(client_env):
     assert "registry" in dep
     assert "treasury" in dep
     assert "executor" in dep
+
+
+def test_rule_registry_specification_consistency(client_env):
+    """Test that evaluated rules match the authoritative CASCADE specification (R1-R7, R9; no R8)."""
+    client = client_env["client"]
+    rpc_url = client_env["rpc_url"]
+
+    # Reset & seed then verify
+    client.post("/scenarios/C/run", json={"rpc_url": rpc_url})
+    v_resp = client.post("/scenarios/A/run", json={"rpc_url": rpc_url})
+    assert v_resp.status_code == 200
+    data = v_resp.json()
+
+    rules = data["verification_report"]["rules"]
+    rule_ids = [r["rule_id"] for r in rules]
+    # The specification in docs/dao-build-guide-final.md Section 5.6 defines:
+    # R1 (version), R2 (action), R3 (token outflow), R4 (unexpected balance increase),
+    # R5 (allowance change), R6 (implementation slot), R7 (selector whitelist), R9 (owner/role change).
+    # Rule R8 was never defined in the specification.
+    assert rule_ids == ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R9"]
+
+    for r in rules:
+        assert r["status"] in ("PASS", "FAIL", "UNCERTAIN", "NOT_APPLICABLE", "NOT_RUN")
+        assert len(r["explanation"]) > 0
+        assert isinstance(r["evidence"], dict)
+
+
+def test_scenario_b1_cannot_bypass_execution_endpoint(client_env):
+    """Test that Scenario B1's substituted calldata cannot be executed through the /execute API."""
+    client = client_env["client"]
+    rpc_url = client_env["rpc_url"]
+
+    # Run Scenario B1
+    b1_resp = client.post("/scenarios/B1/run", json={"rpc_url": rpc_url})
+    assert b1_resp.status_code == 200
+    b1_data = b1_resp.json()
+    assert b1_data["verdict"] == "MISMATCH"
+    assert b1_data["blocked_as_expected"] is True
+    assert b1_data["outcome_classification"] == "Rejected before submission & on-chain transaction reverted"
+    assert b1_data["balances_verified"]["treasury_protected"] is True
+    assert b1_data["balances_verified"]["attacker_zero_gain"] is True
+
+    # Attempt to bypass verifier by calling POST /execute directly
+    from app.manifest.hashes import encode_erc20_transfer_calldata
+    attacker_calldata = "0x" + encode_erc20_transfer_calldata(
+        "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65", 2_000_000 * 10**6
+    ).hex()
+
+    dep = client.get("/deployments").json()
+    exec_resp = client.post(
+        "/execute/PROP-B1",
+        json={
+            "proposal_id": "PROP-B1",
+            "target": dep["token"],
+            "value": 0,
+            "data": attacker_calldata,
+            "executor_address": dep["executor"],
+            "registry_address": dep["registry"],
+            "rpc_url": rpc_url,
+        },
+    )
+    # Must fail with HTTP 400 because actionHash mismatches and no VERIFIED attestation exists
+    assert exec_resp.status_code == 400
+    detail = exec_resp.json()["detail"].lower()
+    assert "actionhash" in detail or "no verified attestation" in detail
+
+
+def test_unsafe_chain_id_rejected():
+    """Test that non-local chain IDs are strictly rejected to prevent accidental production execution."""
+    from unittest.mock import MagicMock
+    from app.scenarios.runner import verify_local_chain
+
+    mock_w3 = MagicMock()
+    # Mainnet chain ID is 1
+    mock_w3.eth.chain_id = 1
+    with pytest.raises(ValueError, match="Refusing to execute scenario against non-local chain ID 1"):
+        verify_local_chain(mock_w3)
+
+    # Sepolia chain ID is 11155111
+    mock_w3.eth.chain_id = 11155111
+    with pytest.raises(ValueError, match="Refusing to execute scenario against non-local chain ID 11155111"):
+        verify_local_chain(mock_w3)
+
+    # Local Anvil (31337) and Hardhat (1337) must pass
+    mock_w3.eth.chain_id = 31337
+    verify_local_chain(mock_w3)  # No exception
+    mock_w3.eth.chain_id = 1337
+    verify_local_chain(mock_w3)  # No exception
+
+
+def test_concurrent_scenario_runs_locked(client_env):
+    """Test that concurrent scenario execution is safely locked."""
+    from app.scenarios.runner import _SCENARIO_LOCK, execute_scenario
+
+    # Artificially acquire the scenario lock
+    acquired = _SCENARIO_LOCK.acquire(blocking=False)
+    assert acquired is True
+    try:
+        # Second call must raise ValueError due to lock contention
+        with pytest.raises(ValueError, match="Another scenario run is currently in progress"):
+            execute_scenario(name="A")
+    finally:
+        _SCENARIO_LOCK.release()
+
+
+def test_health_endpoint_live_chain_status(client_env):
+    """Test that GET /health inspects Web3 connectivity and returns live chain information."""
+    client = client_env["client"]
+    rpc_url = client_env["rpc_url"]
+
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert "rpc_connected" in data
+    assert "chain_id" in data
+    assert "block_number" in data

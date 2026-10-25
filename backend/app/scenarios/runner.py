@@ -3,6 +3,7 @@
 import json
 import logging
 from pathlib import Path
+import threading
 from typing import Any, Dict, List, Optional
 
 from eth_account import Account
@@ -33,6 +34,24 @@ from app.verification.verify import (
 )
 
 logger = logging.getLogger("scenario_runner")
+
+_SCENARIO_LOCK = threading.Lock()
+LOCAL_CHAIN_IDS = {31337, 1337}
+
+
+def verify_local_chain(w3: Web3) -> None:
+    """Verify that the connected chain is a permitted local development chain."""
+    try:
+        chain_id = w3.eth.chain_id
+    except Exception as e:
+        raise ValueError(f"Unable to query chain ID from Web3 provider: {e}") from e
+
+    if chain_id not in LOCAL_CHAIN_IDS:
+        raise ValueError(
+            f"Refusing to execute scenario against non-local chain ID {chain_id}. "
+            f"Only local development chains ({LOCAL_CHAIN_IDS}) are permitted."
+        )
+
 
 RECIPIENT_ADDR = "0x9965507D1a55BCC6475675304Ca994970De97744"
 ATTACKER_ADDR = "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"
@@ -68,6 +87,7 @@ def ensure_deployments(
     force_redeploy: bool = False,
 ) -> Dict[str, Any]:
     """Ensure core contracts are deployed and functional on the connected chain."""
+    verify_local_chain(w3)
     import sys
     scripts_dir = Path(__file__).resolve().parents[3] / "scripts"
     if str(scripts_dir) not in sys.path:
@@ -377,6 +397,13 @@ def run_scenario_b1(
         }
     )
 
+    # Balance reads before attempted execution
+    rec_cs = Web3.to_checksum_address(RECIPIENT_ADDR)
+    att_cs = Web3.to_checksum_address(ATTACKER_ADDR)
+    treas_bal_before = token_contract.functions.balanceOf(treasury_addr).call()
+    rec_bal_before = token_contract.functions.balanceOf(rec_cs).call()
+    att_bal_before = token_contract.functions.balanceOf(att_cs).call()
+
     # Step 2: Attempt on-chain execution with bogus signature to demonstrate on-chain revert
     execution_blocked = True
     revert_message = "no attestation"
@@ -405,6 +432,19 @@ def run_scenario_b1(
         execution_blocked = True
         revert_message = str(e)
 
+    # Balance reads after attempted execution
+    treas_bal_after = token_contract.functions.balanceOf(treasury_addr).call()
+    rec_bal_after = token_contract.functions.balanceOf(rec_cs).call()
+    att_bal_after = token_contract.functions.balanceOf(att_cs).call()
+
+    # Strict invariant verification: balances must not change
+    if treas_bal_before != treas_bal_after:
+        raise RuntimeError("CRITICAL INVARIANT VIOLATION: Treasury balance decreased during blocked attack!")
+    if att_bal_before != att_bal_after:
+        raise RuntimeError("CRITICAL INVARIANT VIOLATION: Attacker gained tokens during blocked attack!")
+    if rec_bal_before != rec_bal_after:
+        raise RuntimeError("CRITICAL INVARIANT VIOLATION: Recipient balance mutated during blocked attack!")
+
     steps.append(
         {
             "step": "On-Chain Guarded Execution Revert",
@@ -419,12 +459,24 @@ def run_scenario_b1(
         "proposal_id": pid,
         "success": True,
         "blocked_as_expected": True,
+        "outcome_classification": "Rejected before submission & on-chain transaction reverted",
         "verdict": VERDICT_MISMATCH,
         "steps": steps,
         "verification_report": report.to_dict(),
         "diff": report.diff,
         "execution_result": None,
         "revert_details": revert_message,
+        "defense_layers": {
+            "verifier_rejection": "Attestation withheld due to Rule R2 actionHash mismatch",
+            "onchain_revert": "GuardedExecutor.execute reverted due to action mismatch / bad attestation",
+        },
+        "balances_verified": {
+            "treasury_protected": treas_bal_before == treas_bal_after,
+            "attacker_zero_gain": att_bal_before == att_bal_after,
+            "recipient_unaffected": rec_bal_before == rec_bal_after,
+            "treasury_balance": str(treas_bal_after),
+            "attacker_balance": str(att_bal_after),
+        },
     }
 
 
@@ -484,6 +536,22 @@ def run_scenario_c(
         }
     )
 
+    # 3. Verify postconditions
+    token_cs = Web3.to_checksum_address(deployments["token"])
+    treasury_cs = Web3.to_checksum_address(deployments["treasury"])
+    token_artifact = load_artifact("MockToken")
+    token_contract = w3.eth.contract(address=token_cs, abi=token_artifact["abi"])
+    treas_bal = token_contract.functions.balanceOf(treasury_cs).call()
+    if treas_bal < 1_000_000 * 10**6:
+        raise RuntimeError(f"Scenario C postcondition failed: Treasury balance {treas_bal} < 1,000,000 USDC")
+
+    registry_cs = Web3.to_checksum_address(deployments["registry"])
+    registry_artifact = load_artifact("GovernanceRegistry")
+    registry_contract = w3.eth.contract(address=registry_cs, abi=registry_artifact["abi"])
+    app_tuple = registry_contract.functions.approved(proposal_id_to_bytes32("PROP-002")).call()
+    if app_tuple[0] == b"\x00" * 32:
+        raise RuntimeError("Scenario C postcondition failed: PROP-002 has no active approved versionHash on-chain")
+
     return {
         "scenario": "C",
         "name": "Scenario C: Clean Reset & Seed",
@@ -501,11 +569,18 @@ def execute_scenario(
 ) -> Dict[str, Any]:
     """Execute scenario by name: A, B1, C."""
     norm = name.strip().upper()
-    if norm == "A":
-        return run_scenario_a(rpc_url=rpc_url, db_path=db_path)
-    elif norm in ("B1", "B"):
-        return run_scenario_b1(rpc_url=rpc_url, db_path=db_path)
-    elif norm == "C":
-        return run_scenario_c(rpc_url=rpc_url, db_path=db_path)
-    else:
+    if norm not in ("A", "B1", "B", "C"):
         raise ValueError(f"Unknown scenario name: '{name}'. Supported scenarios: 'A', 'B1', 'C'")
+
+    if not _SCENARIO_LOCK.acquire(blocking=False):
+        raise ValueError("Another scenario run is currently in progress. Concurrent execution is blocked.")
+
+    try:
+        if norm == "A":
+            return run_scenario_a(rpc_url=rpc_url, db_path=db_path)
+        elif norm in ("B1", "B"):
+            return run_scenario_b1(rpc_url=rpc_url, db_path=db_path)
+        elif norm == "C":
+            return run_scenario_c(rpc_url=rpc_url, db_path=db_path)
+    finally:
+        _SCENARIO_LOCK.release()

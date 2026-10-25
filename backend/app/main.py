@@ -22,5 +22,24 @@ app.include_router(api_router)
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, object]:
+    from app.chain.client import get_web3, DEFAULT_RPC_URL
+    rpc_connected = False
+    chain_id = None
+    block_number = None
+    try:
+        w3 = get_web3()
+        if w3.is_connected():
+            rpc_connected = True
+            chain_id = w3.eth.chain_id
+            block_number = w3.eth.block_number
+    except Exception:
+        rpc_connected = False
+
+    return {
+        "status": "ok",
+        "rpc_connected": rpc_connected,
+        "chain_id": chain_id,
+        "block_number": block_number,
+        "rpc_url": DEFAULT_RPC_URL,
+    }

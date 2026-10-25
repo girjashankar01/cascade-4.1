@@ -238,7 +238,7 @@ def analyze_proposal(pid: str, payload: Optional[AnalyzePayload] = None) -> Anal
                     "filename": row["filename"],
                     "content_type": row["content_type"],
                     "page_count": row["page_count"],
-                    "extracted_pages": json.loads(row["extracted_pages"]),
+                    "extracted_pages": json.loads(row["extracted_pages"]) if row["extracted_pages"] else {},
                     "ocr_used": bool(row["ocr_used"]),
                 }
             )
@@ -1039,7 +1039,7 @@ def get_source_detail(source_id: str) -> Dict[str, Any]:
         "content_type": row["content_type"],
         "storage_path": row["storage_path"],
         "page_count": row["page_count"],
-        "extracted_pages": json.loads(row["extracted_pages"]),
+        "extracted_pages": json.loads(row["extracted_pages"]) if row["extracted_pages"] else {},
         "ocr_used": bool(row["ocr_used"]),
         "created_at": row["created_at"],
     }
@@ -1067,9 +1067,9 @@ def get_verifications_for_proposal(pid: str) -> List[Dict[str, Any]]:
                     "calldata": row["calldata"],
                     "action_hash": row["action_hash"],
                     "verdict": row["verdict"],
-                    "rules": json.loads(row["rules_json"]),
-                    "diff": json.loads(row["diff_json"]),
-                    "simulation": json.loads(row["simulation_json"]),
+                    "rules": json.loads(row["rules_json"]) if row["rules_json"] else [],
+                    "diff": json.loads(row["diff_json"]) if row["diff_json"] else {},
+                    "simulation": json.loads(row["simulation_json"]) if row["simulation_json"] else {},
                     "attestation_sig": row["attestation_sig"],
                     "deadline": row["deadline"],
                     "executed": bool(row["executed"]),
