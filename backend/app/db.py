@@ -121,5 +121,45 @@ def init_db(db_path: Optional[Path | str] = None) -> None:
             );
 
             CREATE INDEX IF NOT EXISTS idx_cache_key ON llm_cache(cache_key);
+
+            CREATE TABLE IF NOT EXISTS manifests (
+                id TEXT PRIMARY KEY,
+                proposal_id TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                canonical_json TEXT NOT NULL,
+                manifest_dict TEXT NOT NULL,
+                proposal_text_hash TEXT NOT NULL,
+                evidence_root TEXT NOT NULL,
+                prev_version_hash TEXT NOT NULL,
+                version_hash TEXT NOT NULL,
+                action_hash TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'DRAFTED',
+                proposer_address TEXT,
+                proposer_signature TEXT,
+                created_at TEXT NOT NULL,
+                confirmed_at TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_manifests_pid_ver ON manifests(proposal_id, version);
+
+            CREATE TABLE IF NOT EXISTS versions (
+                id TEXT PRIMARY KEY,
+                proposal_id TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                version_hash TEXT NOT NULL,
+                action_hash TEXT NOT NULL,
+                evidence_root TEXT NOT NULL,
+                prev_version_hash TEXT NOT NULL,
+                commit_tx_hash TEXT,
+                commit_block_number INTEGER,
+                committed_at TEXT,
+                approve_tx_hash TEXT,
+                approve_block_number INTEGER,
+                approved_at TEXT,
+                onchain_verified BOOLEAN NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_versions_pid_ver ON versions(proposal_id, version);
             """
         )

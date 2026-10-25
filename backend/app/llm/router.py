@@ -184,7 +184,8 @@ class LLMRouter:
         error_message: Optional[str] = None,
     ) -> None:
         """Persist analysis audit record to analyses table."""
-        audit_id = f"anl_{proposal_id}_{int(time.time() * 1000)}"
+        import uuid
+        audit_id = f"anl_{proposal_id}_{time.time_ns()}_{uuid.uuid4().hex[:8]}"
         created_at = datetime.now(timezone.utc).isoformat()
 
         try:

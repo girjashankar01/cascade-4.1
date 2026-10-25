@@ -4,14 +4,15 @@ CASCADE ’26, Problem 4.1. Architectural source of truth:
 [final build guide](docs/dao-build-guide-final.md). The older
 [project handoff](docs/project%20handoff.md) is preserved as background.
 
-Stages 0, 1, and 2 are fully implemented and verified:
+Stages 0, 1, 2, and 3 are fully implemented and verified:
 - **Stage 0:** Environment scaffolding, Python 3.11 via `uv`, Foundry 1.8.6, React/Vite frontend.
 - **Stage 1:** Core contracts (`MockToken`, `GovernanceRegistry`, `Treasury`, `GuardedExecutor`), Python EIP-712 signing, and on-chain verification.
 - **Stage 2:** Evidence ingestion (PDF/plain-text with PyMuPDF & RapidOCR fallback), Pydantic claim schema, deterministic text grounding, numeric cross-checks, cross-source conflict detection, SQLite-backed LLM caching/audit trail, and Stage 2 FastAPI endpoints.
+- **Stage 3:** Canonical manifest serialization (`canon.py`), version hash chaining & evidence root commitments (`hashes.py`), manifest builder with eligibility/conflict gates (`builder.py`), on-chain GovernanceRegistry version commit & approval (`client.py`), tampering detection, clean v1/v2 fixtures, and Stage 3 FastAPI endpoints.
 
 Validation status is recorded in [handoff.md](handoff.md) and technical decisions in [decisions.md](decisions.md).
 
-## Stage 1 & 2 status and test results
+## Stage 1, 2 & 3 status and test results
 
 - **Smart contracts (`contracts/src/`):**
   - `MockToken.sol`: OpenZeppelin ERC-20 (6 decimals) with deployer-restricted minting.
@@ -22,14 +23,26 @@ Validation status is recorded in [handoff.md](handoff.md) and technical decision
   - `ingestion/`: PyMuPDF native extraction (1-indexed pages), 50-character OCR fallback threshold, SHA-256 collision-safe storage, idempotent re-uploads.
   - `claims/`: Canonical schema (`amount`, `token`, `recipient`, `purpose`, `assumptions`), deterministic text grounding against extracted pages, Decimal-based monetary normalization, cross-source conflict detection.
   - `llm/`: Protocol-based provider interface, SQLite cache keyed by `SHA256(prompt:input:model)`, single retry on invalid output, closed failure with `LLM_UNAVAILABLE`, and audit logging.
+- **Manifest, hash chaining & governance (`backend/app/manifest/`, `backend/app/chain/`):**
+  - `manifest/canon.py`: Deterministic canonical serialization (sorted keys, no whitespace, UTF-8, integer strings, lowercased Ethereum addresses, strict float rejection).
+  - `manifest/hashes.py`: Cryptographic hash formulas (`proposalTextHash`, `evidenceRoot` over sorted 32-byte sha256 digests, `versionHash = keccak256(canon_bytes || prevVersionHash)`, `actionHash = keccak256(abi.encode(target, value, keccak256(calldata)))`).
+  - `manifest/builder.py`: Manifest drafting from grounded claims; strict eligibility blocking on unresolved conflicts ($5.0M vs $5.8M) or missing mandatory claims; proposer signing; deterministic tamper detection identifying exact mismatched commitments.
+  - `chain/client.py`: Web3 client for deploying and interacting with `GovernanceRegistry`, committing versions, and executing simulated governance approvals.
   - `api/routes.py`:
     - `POST /sources`: Ingests PDF or text sources.
     - `POST /analyze/{pid}`: Runs extraction, grounding, and conflict detection.
     - `GET /claims/{pid}`: Fetches claims and unresolved conflicts.
     - `GET /audit/{pid}`: Fetches immutable audit trail.
+    - `POST /manifest/{pid}`: Drafts canonical manifest from grounded claims.
+    - `POST /manifest/{pid}/confirm`: Confirms manifest and signs versionHash with proposer key.
+    - `GET /manifest/{pid}`: Fetches confirmed manifest.
+    - `POST /commit/{pid}`: Commits manifest version to GovernanceRegistry on-chain.
+    - `POST /approve/{pid}`: Governance approves committed version on-chain.
+    - `GET /versions/{pid}`: Fetches complete version chain and approval records.
+    - `POST /verify-version/{pid}`: Verifies manifest integrity against tampering.
 - **Test validation results:**
   - `cd contracts && forge test -vv`: 24 passed across 3 suites.
-  - `cd backend && uv run pytest`: 30 passed across 8 test suites.
+  - `cd backend && uv run pytest`: 48 passed across 13 test suites.
   - `cd frontend && npm run build && npm run lint`: 0 warnings, 0 errors.
 
 ## Environment variables

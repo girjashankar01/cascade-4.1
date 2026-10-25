@@ -20,6 +20,22 @@ from app.ingestion.pdf import (
 )
 from app.llm.base import LLMUnavailableError
 from app.llm.router import LLMRouter
+from app.manifest.builder import (
+    EligibilityError,
+    ManifestError,
+    TamperError,
+    build_manifest_draft,
+    confirm_manifest_with_signature,
+    verify_manifest_integrity,
+)
+from app.chain.client import (
+    PK_GOVERNANCE,
+    PK_PROPOSER,
+    approve_version_onchain,
+    commit_version_onchain,
+    get_onchain_approved,
+    get_onchain_version,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +66,48 @@ class PasteSourcePayload(BaseModel):
 class AnalyzePayload(BaseModel):
     source_ids: Optional[List[str]] = None
     prompt: Optional[str] = "Extract factual payout claims with verbatim quotes."
+
+
+class DraftManifestPayload(BaseModel):
+    token_address: str
+    token_decimals: Optional[int] = 6
+    version: Optional[int] = 1
+    proposal_text: Optional[str] = None
+    source_id: Optional[str] = None
+    prev_version_hash: Optional[str] = None
+
+
+class ConfirmManifestPayload(BaseModel):
+    token_address: str
+    token_decimals: Optional[int] = 6
+    version: Optional[int] = 1
+    proposer_private_key: Optional[str] = None
+    proposal_text: Optional[str] = None
+    source_id: Optional[str] = None
+    prev_version_hash: Optional[str] = None
+
+
+class CommitVersionPayload(BaseModel):
+    version: Optional[int] = None
+    registry_address: Optional[str] = None
+    proposer_private_key: Optional[str] = None
+    rpc_url: Optional[str] = None
+
+
+class ApproveVersionPayload(BaseModel):
+    version: Optional[int] = None
+    registry_address: Optional[str] = None
+    governance_private_key: Optional[str] = None
+    rpc_url: Optional[str] = None
+
+
+class VerifyVersionPayload(BaseModel):
+    version: Optional[int] = None
+    manifest_dict: Optional[Dict[str, Any]] = None
+    proposal_text: Optional[str] = None
+    evidence_hashes: Optional[List[str]] = None
+    registry_address: Optional[str] = None
+    rpc_url: Optional[str] = None
 
 
 @router.post("/sources", status_code=status.HTTP_201_CREATED)
@@ -332,3 +390,344 @@ def get_audit_trail(pid: str) -> List[Dict[str, Any]]:
             )
 
     return records
+
+
+@router.post("/manifest/{pid}")
+def draft_manifest(pid: str, payload: DraftManifestPayload) -> Dict[str, Any]:
+    """Draft a canonical manifest from confirmed, conflict-free claims."""
+    init_db()
+    try:
+        draft = build_manifest_draft(
+            proposal_id=pid,
+            token_address=payload.token_address,
+            token_decimals=payload.token_decimals or 6,
+            version=payload.version or 1,
+            proposal_text=payload.proposal_text,
+            source_id=payload.source_id,
+            prev_version_hash=payload.prev_version_hash,
+        )
+        return draft
+    except EligibilityError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": "ELIGIBILITY_ERROR", "message": str(e)},
+        ) from e
+    except Exception as e:
+        logger.error(f"Failed to draft manifest for '{pid}': {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+
+
+@router.post("/manifest/{pid}/confirm")
+def confirm_manifest(pid: str, payload: ConfirmManifestPayload) -> Dict[str, Any]:
+    """Confirm drafted manifest and sign versionHash with proposer key."""
+    init_db()
+    proposer_pk = payload.proposer_private_key or PK_PROPOSER
+    try:
+        confirmed = confirm_manifest_with_signature(
+            proposal_id=pid,
+            version=payload.version or 1,
+            proposer_private_key=proposer_pk,
+            token_address=payload.token_address,
+            token_decimals=payload.token_decimals or 6,
+            proposal_text=payload.proposal_text,
+            source_id=payload.source_id,
+            prev_version_hash=payload.prev_version_hash,
+        )
+        return confirmed
+    except EligibilityError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": "ELIGIBILITY_ERROR", "message": str(e)},
+        ) from e
+    except Exception as e:
+        logger.error(f"Failed to confirm manifest for '{pid}': {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+
+
+@router.get("/manifest/{pid}")
+def get_latest_manifest(pid: str, version: Optional[int] = None) -> Dict[str, Any]:
+    """Fetch the latest confirmed manifest for a proposal."""
+    init_db()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        if version is not None:
+            cursor.execute(
+                "SELECT * FROM manifests WHERE proposal_id = ? AND version = ?",
+                (pid, version),
+            )
+        else:
+            cursor.execute(
+                "SELECT * FROM manifests WHERE proposal_id = ? ORDER BY version DESC LIMIT 1",
+                (pid,),
+            )
+        row = cursor.fetchone()
+
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No manifest found for proposal '{pid}'",
+        )
+
+    return {
+        "manifest_id": row["id"],
+        "proposal_id": row["proposal_id"],
+        "version": row["version"],
+        "version_hash": row["version_hash"],
+        "action_hash": row["action_hash"],
+        "proposal_text_hash": row["proposal_text_hash"],
+        "evidence_root": row["evidence_root"],
+        "prev_version_hash": row["prev_version_hash"],
+        "proposer_address": row["proposer_address"],
+        "proposer_signature": row["proposer_signature"],
+        "canonical_json": row["canonical_json"],
+        "manifest": json.loads(row["manifest_dict"]),
+        "status": row["status"],
+        "confirmed_at": row["confirmed_at"],
+    }
+
+
+@router.post("/commit/{pid}")
+def commit_version(pid: str, payload: Optional[CommitVersionPayload] = None) -> Dict[str, Any]:
+    """Commit a manifest version to GovernanceRegistry on-chain and record in database."""
+    init_db()
+    target_version = payload.version if payload and payload.version else None
+    registry_address = payload.registry_address if payload else None
+    proposer_pk = (payload.proposer_private_key if payload and payload.proposer_private_key else None) or PK_PROPOSER
+    rpc_url = payload.rpc_url if payload else None
+
+    # 1. Fetch manifest record from database
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        if target_version is not None:
+            cursor.execute(
+                "SELECT * FROM manifests WHERE proposal_id = ? AND version = ?",
+                (pid, target_version),
+            )
+        else:
+            cursor.execute(
+                "SELECT * FROM manifests WHERE proposal_id = ? ORDER BY version DESC LIMIT 1",
+                (pid,),
+            )
+        manifest_row = cursor.fetchone()
+
+    if not manifest_row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No confirmed manifest found for proposal '{pid}' to commit",
+        )
+
+    m = dict(manifest_row)
+    ver = m["version"]
+    vhash = m["version_hash"]
+    ahash = m["action_hash"]
+    eroot = m["evidence_root"]
+    prev_vhash = m["prev_version_hash"]
+
+    commit_tx_hash = None
+    commit_block_number = None
+    onchain_verified = False
+
+    # 2. Call on-chain if registry address provided
+    if registry_address:
+        try:
+            chain_res = commit_version_onchain(
+                registry_address=registry_address,
+                proposal_id=pid,
+                version_hash=vhash,
+                action_hash=ahash,
+                evidence_root=eroot,
+                proposer_key=proposer_pk,
+                rpc_url=rpc_url,
+            )
+            commit_tx_hash = chain_res["tx_hash"]
+            commit_block_number = chain_res["block_number"]
+            onchain_verified = True
+        except Exception as e:
+            logger.error(f"On-chain commitVersion failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"On-chain commitVersion reverted: {e}",
+            ) from e
+
+    # 3. Record in versions table
+    version_id = f"ver_{pid}_{ver}"
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO versions (
+                id, proposal_id, version, version_hash, action_hash, evidence_root,
+                prev_version_hash, commit_tx_hash, commit_block_number, committed_at,
+                onchain_verified, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, datetime('now'))
+            """,
+            (
+                version_id,
+                pid,
+                ver,
+                vhash,
+                ahash,
+                eroot,
+                prev_vhash,
+                commit_tx_hash,
+                commit_block_number,
+                1 if onchain_verified else 0,
+            ),
+        )
+
+    return {
+        "version_id": version_id,
+        "proposal_id": pid,
+        "version": ver,
+        "version_hash": vhash,
+        "action_hash": ahash,
+        "evidence_root": eroot,
+        "prev_version_hash": prev_vhash,
+        "commit_tx_hash": commit_tx_hash,
+        "commit_block_number": commit_block_number,
+        "onchain_verified": onchain_verified,
+        "status": "COMMITTED",
+    }
+
+
+@router.post("/approve/{pid}")
+def approve_version(pid: str, payload: Optional[ApproveVersionPayload] = None) -> Dict[str, Any]:
+    """Governance approves the latest committed version for execution."""
+    init_db()
+    target_version = payload.version if payload and payload.version else None
+    registry_address = payload.registry_address if payload else None
+    governance_pk = (payload.governance_private_key if payload and payload.governance_private_key else None) or PK_GOVERNANCE
+    rpc_url = payload.rpc_url if payload else None
+
+    # Fetch committed version
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        if target_version is not None:
+            cursor.execute(
+                "SELECT * FROM versions WHERE proposal_id = ? AND version = ?",
+                (pid, target_version),
+            )
+        else:
+            cursor.execute(
+                "SELECT * FROM versions WHERE proposal_id = ? ORDER BY version DESC LIMIT 1",
+                (pid,),
+            )
+        vrow = cursor.fetchone()
+
+    if not vrow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No committed version found for proposal '{pid}' to approve",
+        )
+
+    ver = vrow["version"]
+    vhash = vrow["version_hash"]
+    approve_tx_hash = None
+    approve_block_number = None
+
+    if registry_address:
+        try:
+            chain_res = approve_version_onchain(
+                registry_address=registry_address,
+                proposal_id=pid,
+                version_hash=vhash,
+                governance_key=governance_pk,
+                rpc_url=rpc_url,
+            )
+            approve_tx_hash = chain_res["tx_hash"]
+            approve_block_number = chain_res["block_number"]
+        except Exception as e:
+            logger.error(f"On-chain approve failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"On-chain approve reverted: {e}",
+            ) from e
+
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            UPDATE versions
+            SET approve_tx_hash = ?, approve_block_number = ?, approved_at = datetime('now')
+            WHERE proposal_id = ? AND version = ?
+            """,
+            (approve_tx_hash, approve_block_number, pid, ver),
+        )
+
+    return {
+        "proposal_id": pid,
+        "version": ver,
+        "version_hash": vhash,
+        "approve_tx_hash": approve_tx_hash,
+        "approve_block_number": approve_block_number,
+        "status": "APPROVED",
+    }
+
+
+@router.get("/versions/{pid}")
+def get_version_chain(pid: str) -> List[Dict[str, Any]]:
+    """Return complete version history and approval status for a proposal."""
+    init_db()
+    records: List[Dict[str, Any]] = []
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM versions WHERE proposal_id = ? ORDER BY version ASC",
+            (pid,),
+        )
+        for row in cursor.fetchall():
+            records.append(
+                {
+                    "id": row["id"],
+                    "proposal_id": row["proposal_id"],
+                    "version": row["version"],
+                    "version_hash": row["version_hash"],
+                    "action_hash": row["action_hash"],
+                    "evidence_root": row["evidence_root"],
+                    "prev_version_hash": row["prev_version_hash"],
+                    "commit_tx_hash": row["commit_tx_hash"],
+                    "commit_block_number": row["commit_block_number"],
+                    "committed_at": row["committed_at"],
+                    "approve_tx_hash": row["approve_tx_hash"],
+                    "approve_block_number": row["approve_block_number"],
+                    "approved_at": row["approved_at"],
+                    "onchain_verified": bool(row["onchain_verified"]),
+                    "is_approved": bool(row["approved_at"]),
+                }
+            )
+    return records
+
+
+@router.post("/verify-version/{pid}")
+def verify_version(pid: str, payload: Optional[VerifyVersionPayload] = None) -> Dict[str, Any]:
+    """Verify integrity of a committed manifest version against tampering."""
+    init_db()
+    ver = payload.version if payload and payload.version else 1
+    m_dict = payload.manifest_dict if payload else None
+    p_text = payload.proposal_text if payload else None
+    e_hashes = payload.evidence_hashes if payload else None
+    reg_addr = payload.registry_address if payload else None
+    rpc_url = payload.rpc_url if payload else None
+
+    try:
+        report = verify_manifest_integrity(
+            proposal_id=pid,
+            version=ver,
+            manifest_dict=m_dict,
+            proposal_text=p_text,
+            evidence_hashes=e_hashes,
+            registry_address=reg_addr,
+            rpc_url=rpc_url,
+        )
+        return report
+    except TamperError as e:
+        return {
+            "verified": False,
+            "tamper_detected": True,
+            "proposal_id": pid,
+            "version": ver,
+            "error": str(e),
+        }
+    except Exception as e:
+        logger.error(f"Integrity check failed: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+

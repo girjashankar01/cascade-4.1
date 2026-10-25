@@ -104,4 +104,28 @@ Implemented `backend/app/chain/attest.py` using `eth-account` (v0.14) and `web3.
    - Single retry on schema or JSON failure, then fails closed with `LLM_UNAVAILABLE`.
    - All attempts log an immutable audit record in `analyses` table without secrets.
 
+## 2026-10-25 — Stage 3 canonicalization, hash chaining, and on-chain governance architecture
+
+1. Canonical manifest serialization (`canon.py`):
+   - One shared canonicalization engine is used across Python manifest building, signature signing/verification, and tamper detection.
+   - Implemented lexicographical sorting of dictionary keys, removal of all insignificant whitespace (`separators=(',', ':')`), and UTF-8 byte serialization (`ensure_ascii=False`).
+   - Strictly forbids floating-point values in manifest objects (`ValueError`), ensuring all numerical values (token amounts, decimals, versions) are encoded as integer strings or integers.
+   - Normalized all 40-hex Ethereum addresses (`0x...`) to lowercase in manifest actions and envelopes.
+2. Cryptographic hash commitments (`hashes.py`):
+   - `proposalTextHash`: Computed as `keccak256` over the UTF-8 bytes of the exact proposal text seen by voters.
+   - `evidenceRoot`: Computed as `keccak256` over the binary concatenation of sorted 32-byte SHA-256 digests of relevant evidence documents.
+   - `versionHash`: Computed as `keccak256(canonical_manifest_utf8_bytes + 32-byte binary prevVersionHash)`. Version 1 links to `INITIAL_PREV_VERSION_HASH = "0x" + "00"*32`.
+   - `actionHash`: Computed as `keccak256(abi.encode(target, value, keccak256(calldata)))`, matching Solidity GuardedExecutor exactly.
+3. Eligibility gates and human confirmation (`builder.py`):
+   - `check_claims_eligibility` strictly enforces that proposals with unresolved conflicts (e.g. `$5.0M` vs `$5.8M`) or `UNCERTAIN`/`REJECTED` mandatory claims (`amount`, `recipient`) cannot be drafted or confirmed, raising `EligibilityError` and returning HTTP 422.
+   - Human confirmation requires proposer key signature over `versionHash`, persisted in SQLite `manifests` table.
+4. On-chain version chain & approval invalidation:
+   - `commit_version_onchain` submits `commitVersion` from the designated proposer account to `GovernanceRegistry`.
+   - `approve_version_onchain` submits `approve` from the simulated governance account.
+   - Committing any subsequent version clears `_approved[pid]` on `GovernanceRegistry`, ensuring text revisions with identical actions cannot reuse previous approvals.
+5. Tampering verification:
+   - `verify_manifest_integrity` independently recomputes all four commitments (`proposalTextHash`, `evidenceRoot`, `versionHash`, `actionHash`) and verifies them against stored records and the on-chain registry.
+   - Tampering with any byte of the manifest, evidence files, or proposal text raises `TamperError`, specifically identifying which commitment mismatched.
+
+
 

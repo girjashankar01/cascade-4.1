@@ -1,60 +1,85 @@
-# Stage 2 handoff
+# Stage 3 handoff
 
-Updated 2026-10-25. **Stage 2 complete.** Evidence ingestion, canonical claim extraction, deterministic text grounding, numeric cross-checks, cross-source conflict detection, LLM routing with SQLite caching and audit trails, and all Stage 2 FastAPI endpoints are verified.
+Updated 2026-10-25. **Stage 3 complete.** Canonical manifest serialization (`canon.py`), version hash chaining & evidence root commitments (`hashes.py`), manifest builder with eligibility/conflict gates (`builder.py`), on-chain GovernanceRegistry version commit & approval (`client.py`), tampering detection, clean v1/v2 fixtures, and Stage 3 FastAPI endpoints are fully implemented and verified.
 
-## Pre-implementation verification findings (Stage 1)
+## Pre-implementation verification findings (Stage 2)
 
-1. `Treasury.setExecutor`: Verified deployer-restricted (`msg.sender == deployer`) and single-use (`executor == address(0)`), permanently locked thereafter.
-2. `GovernanceRegistry` version commits: Identified that `commitVersion` previously retained prior approvals across revisions. Fixed by invalidating `_approved[pid]` upon new version commits, fulfilling Section 9 testing criteria ("A text revision with an identical action invalidates the old approval"). Verified with regression test `test_TextRevision_InvalidatesPriorApproval`.
-3. `MockToken.mint`: Added deployer-only access control (`require(msg.sender == deployer, "only deployer")`), verified with regression test `test_Revert_MockTokenMint_Unauthorized`.
-4. Artifact loading: Verified `test_interop.py` compiles and loads live Foundry artifacts from `contracts/out/` directly, with zero hardcoded bytecode.
-5. ActionHash: Independently verified Python and Solidity compute identical action hash `0x67ace4504a92394fd5e07872975fa56b94ce9583abb97c64adb24df2b4c36995` for test input.
+1. Preflight test suites: Confirmed all 24 Foundry tests and 30 backend pytest tests passed prior to Stage 3 modifications.
+2. Conflict safety: Confirmed that the unresolved `$5.0M` vs `$5.8M` contradiction in `PROP-001` strictly prevents automated or manual manifest confirmation, raising `EligibilityError` and returning HTTP 422.
+3. Sub-millisecond audit collision: Identified and fixed sub-millisecond audit ID collision in `LLMRouter.analyze_sources` by incorporating nanosecond timestamps and uuid entropy.
 
 ## Implemented files and functionality
 
-- `backend/app/db.py`: SQLite initialization with `sources`, `claims`, `conflicts`, `analyses`, and `llm_cache` tables; context manager with Row factory and PRAGMA foreign keys.
-- `backend/app/ingestion/ocr.py`: RapidOCR fallback execution with pluggable mock handler `_OCR_MOCK_HANDLER` to avoid external ONNX model downloads during test runs.
-- `backend/app/ingestion/pdf.py`: PyMuPDF native digital text extraction with 1-indexed pages; 50-character usable text threshold triggering OCR fallback; SHA-256 collision-safe storage under `data/sources/`; idempotent ingestion.
-- `backend/app/claims/schema.py`: Pydantic models for canonical fields (`amount`, `token`, `recipient`, `purpose`, `assumptions`), strict validation on confidence (0.0–1.0) and page (>=1), statuses `GROUNDED`, `UNCERTAIN`, `REJECTED`, and `Conflict` model.
-- `backend/app/claims/ground.py`: Normalization for whitespace, lowercase, and Unicode dash variants; exact substring check against source page; `Decimal`-based monetary normalization equating `$5.0M` and `5,000,000` as integer strings; quote numeric cross-checks.
-- `backend/app/claims/conflicts.py`: Deterministic cross-source contradiction detection; surfaces `$5.0M` vs `$5.8M` discrepancy with both quotes and page references; marks affected claims `UNCERTAIN`.
-- `backend/app/llm/base.py`: `LLMProvider` protocol and `LLMUnavailableError` (code `LLM_UNAVAILABLE`).
-- `backend/app/llm/cache.py`: SQLite cache keyed by `SHA256(prompt_hash:input_hash:model)`.
-- `backend/app/llm/online.py`: Hosted provider implementation with system prompt, markdown JSON block extraction, and timeout handling.
-- `backend/app/llm/router.py`: Caching router with single retry on invalid JSON/schema, closed failure with `LLM_UNAVAILABLE`, and audit trail logging in `analyses` table.
+- `backend/app/manifest/canon.py`: Deterministic JSON serialization:
+  - Lexicographical object key sorting.
+  - Complete elimination of insignificant whitespace.
+  - Strict float rejection (`ValueError` on any `float` input).
+  - Ethereum address lowercasing (`0x...` 40-hex normalization).
+  - Integer-string normalization for token amounts and monetary quantities.
+  - Raw UTF-8 byte encoding (`ensure_ascii=False`).
+- `backend/app/manifest/hashes.py`: Deterministic cryptographic commitments:
+  - `proposalTextHash = keccak256(UTF-8 bytes of proposal text)`.
+  - `evidenceRoot = keccak256(concatenated sorted 32-byte binary SHA-256 digests)`.
+  - `versionHash = keccak256(canonical_manifest_bytes + 32-byte binary prevVersionHash)`.
+  - `actionHash = keccak256(abi.encode(target, value, keccak256(calldata)))` with ABI-encoded `transfer(address,uint256)` calldata.
+- `backend/app/manifest/builder.py`:
+  - `check_claims_eligibility`: Enforces that proposals have zero unresolved conflicts, mandatory claims (`amount`, `recipient`) are `GROUNDED`, and sources are proposal-scoped.
+  - `build_manifest_draft`: Assembles single-action manifest matching Section 5.1 (`erc20_payout`, outflow envelope, text hash, evidence root, prev version hash).
+  - `confirm_manifest_with_signature`: Records human confirmation, signs `versionHash` with proposer private key, and stores in SQLite `manifests` table with status `CONFIRMED`.
+  - `verify_manifest_integrity`: Recomputes all commitments, checks against stored manifest, and verifies against on-chain `GovernanceRegistry`. Detects tampering and raises `TamperError` naming the exact mismatched hash.
+- `backend/app/chain/client.py`:
+  - `deploy_system`: Deploys `MockToken`, `GovernanceRegistry`, `Treasury`, and `GuardedExecutor` on local Anvil nodes.
+  - `commit_version_onchain`: Submits `commitVersion(pid, versionHash, actionHash, evidenceRoot)` by proposer.
+  - `approve_version_onchain`: Submits `approve(pid, versionHash)` by simulated governance account.
+  - `get_onchain_version` & `get_onchain_approved`: Queries on-chain version chain and approved records.
+- `backend/app/db.py`:
+  - Extended SQLite schema with `manifests` and `versions` tables.
 - `backend/app/api/routes.py`:
-  - `POST /sources`: accepts PDF upload or plain text with SHA-256 deduplication.
-  - `POST /analyze/{pid}`: runs extraction, grounding, and conflict detection.
-  - `GET /claims/{pid}`: returns persisted claims, validation details, and conflicts.
-  - `GET /audit/{pid}`: returns audit trail.
-- `backend/app/main.py`: lifespan database initialization and router registration.
-- `fixtures/`: `proposal.pdf` ($5.0M, 5,000,000 USDC to 0x9965507D1a55BCC6475675304Ca994970De97744), `forum_post.txt` ($5.8M conflicting discussion), `expected_claims.json` (deterministic test oracle).
+  - `POST /manifest/{pid}`: Drafts manifest from grounded claims; returns 422 if conflicted/ineligible.
+  - `POST /manifest/{pid}/confirm`: Confirms and signs manifest with proposer key.
+  - `GET /manifest/{pid}`: Retrieves confirmed manifest and canonical JSON.
+  - `POST /commit/{pid}`: Commits version to GovernanceRegistry on-chain and records in database.
+  - `POST /approve/{pid}`: Governance approves latest committed version on-chain.
+  - `GET /versions/{pid}`: Retrieves complete version chain history and approval records.
+  - `POST /verify-version/{pid}`: Verifies manifest integrity against tampering.
+- `fixtures/`:
+  - `clean_proposal_v1.pdf`: Clean proposal for $1.0M payout to `0x9965507D1a55BCC6475675304Ca994970De97744`.
+  - `clean_proposal_v2.pdf`: Text revision of proposal for identical payout action, enabling version chaining tests.
 
 ## Executed commands and outcomes
 
 | Command | Directory | Outcome | Details |
 | --- | --- | --- | --- |
-| `uv run pytest` | `backend/` | PASS | 30 tests passed in 2.49s across 8 test suites |
+| `uv run pytest` | `backend/` | PASS | 48 tests passed in 3.61s across 13 test suites |
 | `forge test -vv` | `contracts/` | PASS | 24 tests passed across 3 test suites |
 | `npm run build` | `frontend/` | PASS | Vite production build succeeded in 67ms |
 | `npm run lint` | `frontend/` | PASS | Oxlint passed with 0 errors and 0 warnings |
 
 ## Exit gate checklist
 
-- [x] Grounding rejects fabricated quotes without accepting paraphrases.
-- [x] Numeric normalization equates `$5.0M` and `5,000,000` under same unit and rejects genuine mismatches.
-- [x] Discrepancy between `$5.0M` and `$5.8M` surfaced with both quotes and source references.
-- [x] Low-confidence claims (< 0.8), OCR-derived claims, and unresolved conflicts remain `UNCERTAIN`.
-- [x] SQLite tables (`sources`, `claims`, `conflicts`, `analyses`, `llm_cache`) implemented.
-- [x] All four Stage 2 routes registered, functional, and covered by end-to-end tests.
-- [x] Stage 1 regression tests pass.
-- [x] Documentation and handoff updated.
+- [x] `canon.py` verified with fixed test vectors (key order, whitespace, unicode, integer strings, float rejection).
+- [x] Manifest builder drafts valid single-action manifest from confirmed claims.
+- [x] Proposer signs version hash with development key (`confirm_manifest_with_signature`).
+- [x] Cryptographic commitments calculated: `proposalTextHash`, `evidenceRoot`, `versionHash`, and `actionHash`.
+- [x] Versions 1 and 2 committed on-chain with visible hash chain (`test_onchain_governance.py`).
+- [x] Version 2 approved by governance account on-chain.
+- [x] Committing Version 3 automatically invalidates prior approval on `GovernanceRegistry`.
+- [x] Disputed proposal ($5.0M vs $5.8M) strictly blocks manifest confirmation.
+- [x] Tampering detection verified: 1-byte change to manifest, evidence, or text fails verification and identifies the mismatched commitment.
+- [x] All Stage 3 API routes implemented, registered, and verified with integration tests.
+- [x] Documentation, README, decisions, and handoff updated.
 
-## Next steps (Stage 3: Manifest Construction, Commitment, and Approval)
+## Next steps (Stage 4: Verification Pipeline, Transaction Simulation, and Guarded Execution)
 
-1. Implement `canon.py` for deterministic JSON canonicalization (sorted keys, no spaces, UTF-8, integer strings).
-2. Implement manifest builder drafting action envelope (`erc20_payout`) from confirmed claims.
-3. Compute `proposalTextHash`, `evidenceRoot`, `versionHash`, and `actionHash`.
-4. Implement `POST /manifest/{pid}` and `POST /manifest/{pid}/confirm`.
-5. Implement on-chain commitment (`POST /commit/{pid}`) and governance approval (`POST /approve/{pid}`).
-6. Add tamper tests (one-byte change to evidence or manifest invalidates versionHash).
+1. Implement transaction simulation (`simulate.py`) using local Anvil fork/node and `eth_call` state overrides.
+2. Implement 7 deterministic verification rules (`verify.py`):
+   - Rule 1: Approved on-chain version match.
+   - Rule 2: Evidence root match.
+   - Rule 3: Single executable action match.
+   - Rule 4: Action hash equality (`keccak256(abi.encode(target, value, keccak256(calldata)))`).
+   - Rule 5: Calldata decoding and parameter cross-check against manifest action.
+   - Rule 6: Watched-state simulation scope and token outflow limit enforcement.
+   - Rule 7: Zero unobservable/unsupported state changes.
+3. Generate EIP-712 attestation with verdict `VERIFIED = 1` and deadline when all rules pass.
+4. Execute verified transaction on-chain via `GuardedExecutor.execute(...)` and verify Treasury token transfer.
+5. Implement `POST /verify` and `POST /execute` API endpoints.
