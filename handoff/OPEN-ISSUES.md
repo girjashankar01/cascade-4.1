@@ -10,7 +10,8 @@ _Maintained by the independent reviewer. Updated after each stage review and eac
 | R0-04 | 0 | NIT | `PLAN.md §5` | `/style-tile` route has no plan for removal before final build | FIXED |
 | R0-05 | 0 | NIT | `PLAN.md §10` | Two open questions answered with defaults; confirmed via human plan approval | FIXED |
 | R1-01 | 1 | NIT | `tokens.css § :root` | Reserved monospace font unimported until Stage 3 technical drawer | OPEN |
-| R1-02 | 1 | NIT | `StyleTilePage.tsx § 22` | Reduced-motion preview state should integrate into ThemeProvider in Stage 2 | OPEN |
+| R1-02 | 1 | NIT | `StyleTilePage.tsx § 22` | Reduced-motion preview state should integrate into ThemeProvider in Stage 2 | FIXED |
+| R2-01 | 2 | NIT | `WorkbenchPage.tsx` | Wire Run button to execution lifecycle in Stage 3 | OPEN |
 
 ---
 
