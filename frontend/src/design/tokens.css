@@ -62,6 +62,16 @@
   --check-height: 0.75rem;
   --check-stroke: 2px;
   --layer-skip: 10;
+  --layer-rail: 3;
+  --layer-tabs: 4;
+  --rail-width: 4rem;
+  --rail-expanded: 12rem;
+  --tabs-height: 4rem;
+  --bottom-rail-height: 5rem;
+  --tab-label-max: 12rem;
+  --dialog-max: 30rem;
+  --field-border-width: 1px;
+  --dialog-backdrop: rgb(0 0 0 / 0.45);
   /* Material colors belong only to the original lock artwork. */
   --lock-metal-top: #67736b;
   --lock-metal-mid: #344039;

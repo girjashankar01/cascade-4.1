@@ -1,0 +1,20 @@
+{
+  "manualSection": "Balances",
+  "repeatJump": {
+    "section": "Scenario",
+    "top": 127.5999984741211
+  },
+  "pinned": {
+    "overlap": false,
+    "pressed": "true"
+  },
+  "pinnedPhone": {
+    "position": "fixed",
+    "scroll": 375,
+    "width": 390
+  },
+  "preferenceCheck": {
+    "footerVisible": true,
+    "reduced": "false"
+  }
+}

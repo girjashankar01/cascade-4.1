@@ -15,16 +15,19 @@ function initialTheme(defaultTheme: Theme): Theme {
 
 export function ThemeProvider({ children, defaultTheme = 'light' }: { children: ReactNode; defaultTheme?: Theme }) {
   const [theme, setTheme] = useState<Theme>(() => initialTheme(defaultTheme))
+  const [reduceMotion, setMotionPreference] = useState(() => {
+    try { return localStorage.getItem('dao-reduce-motion') === 'true' } catch { return false }
+  })
   useLayoutEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
+  useLayoutEffect(() => { document.documentElement.dataset.reduceMotion = String(reduceMotion) }, [reduceMotion])
+  function setReduceMotion(value: boolean) {
+    setMotionPreference(value)
+    try { localStorage.setItem('dao-reduce-motion', String(value)) } catch { /* Session preference remains available. */ }
+  }
   function toggleTheme() {
     const next = theme === 'light' ? 'dark' : 'light'
     setTheme(next)
     try { localStorage.setItem('dao-theme', next) } catch { /* Session state still works. */ }
-    const url = new URL(window.location.href)
-    if (url.searchParams.has('theme')) {
-      url.searchParams.set('theme', next)
-      window.history.replaceState(null, '', url)
-    }
   }
-  return <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>
+  return <ThemeContext.Provider value={{ theme, toggleTheme, reduceMotion, setReduceMotion }}>{children}</ThemeContext.Provider>
 }

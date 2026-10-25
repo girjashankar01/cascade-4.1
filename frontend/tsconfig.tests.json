@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "target": "ES2023", "module": "NodeNext", "moduleResolution": "NodeNext", "types": ["node", "vite/client"],
+    "strict": true, "noEmit": true, "allowImportingTsExtensions": true, "skipLibCheck": true, "erasableSyntaxOnly": true
+  },
+  "include": ["tests/**/*.ts", "src/data/**/*.ts", "src/app/workspaces.ts"]
+}

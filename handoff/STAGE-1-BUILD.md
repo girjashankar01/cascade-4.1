@@ -1,7 +1,7 @@
 # Stage 1 build handoff — design foundations
 
 Date: 2026-10-26 (Asia/Calcutta)
-Status: BUILD COMPLETE; INDEPENDENT STAGE 1 REVIEW PENDING.
+Status: BUILD COMPLETE; independent Stage 1 review PASS in a3973a8.
 Branch: `abhigyan-frontend` only. Source baseline: `a7c786a` (independent Stage 0 PASS WITH NOTES).
 
 ## What was built
@@ -103,3 +103,7 @@ R0-01, R0-02, R0-03: plan additions implemented. R0-04: removal policy explicit.
 ## Next gate
 
 Please write `handoff/STAGE-1-REVIEW.md` and independently re-verify the Stage 0 plan fixes. Stage 2 has not started. The builder will address BLOCKER/MAJOR findings and request re-review before moving on, unless the human explicitly changes the staged workflow.
+
+## Stage 2 follow-up fixes for re-review
+
+R1-02: Reduced-motion override now belongs to ThemeProvider, with guarded persistence and a root CSS attribute. StyleTilePage consumes the shared preference and no longer deletes it on unmount. Browser checks confirmed it survives workbench route changes and reload, and changing it does not navigate to the current section anchor. Please re-verify and close this NIT if confirmed. R1-01 remains deliberately deferred until the Stage 3 technical drawer.

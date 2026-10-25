@@ -14,13 +14,16 @@ Verified 2026-10-26 against installed package notices. Versions are pinned in fr
 | tslib | 2.8.1; Motion dependency | [Repository](https://github.com/microsoft/tslib) | 0BSD; public/licenses/tslib-0BSD.txt, plus tslib-CopyrightNotice.txt |
 | React / React DOM | 19.3.1; retained toolchain, rendering | [Repository](https://github.com/facebook/react) | MIT; public/licenses/react-MIT.txt and react-dom-MIT.txt |
 | scheduler | 0.28.0; React DOM dependency | [Repository](https://github.com/facebook/react) | MIT; public/licenses/scheduler-MIT.txt |
+| react-router-dom / react-router | 7.18.4; declarative workbench routing | [Upstream](https://github.com/remix-run/react-router), [BrowserRouter docs](https://reactrouter.com/api/declarative-routers/BrowserRouter) | MIT; public/licenses/react-router-dom-MIT.txt and react-router-MIT.txt |
+| cookie | 1.1.1; React Router dependency | [Upstream](https://github.com/jshttp/cookie) | MIT; public/licenses/cookie-MIT.txt |
+| set-cookie-parser | 2.7.3; React Router dependency | [Upstream](https://github.com/nfriedly/set-cookie-parser) | MIT; public/licenses/set-cookie-parser-MIT.txt |
 | Lock illustration | Original inline SVG geometry, material shading and interaction; src/components/lock/LockObject.tsx | Authored for this project; no reference asset copied | Project-authored artwork; no separate third-party asset |
 | Interface icons and favicon | Original SVG paths in Icon.tsx and public/favicon.svg | Authored for this project; no icon pack copied | Project-authored artwork; no separate third-party asset |
 | Buttons, marks, theme control, choice controls and layout | Original React/CSS; native controls and shared tokens | Authored for this project; no component kit copied | Project-authored UI; no separate third-party component |
 
 The installed Fontsource Source Sans notice identifies Google Inc.; it is preserved verbatim rather than rewritten. The canonical Adobe upstream license is linked above. Fonts are unmodified; reserved font names are retained only for the original families. Font redistribution follows the included OFL notices; no font is sold independently.
 
-No Animate UI, Uiverse, VibeUI, Aceternity, Magic UI, Inspira UI or stock artwork is included. Lenis is deferred until the landing stage because Stage 1 has no smooth-scroll story scene. The unused scaffold public icon sprite was removed; unused source-only scaffold illustrations are not imported into the build.
+No Animate UI, Uiverse, VibeUI, Aceternity, Magic UI, Inspira UI or stock artwork is included. The owner skipped the landing page, so Lenis is omitted. The unused scaffold public icon sprite was removed; unused source-only scaffold illustrations are not imported into the build. The style tile and its Motion/lock chunk are development-only in Stage 2 production output; lock code remains available for the future workbench run UI.
 
 Build tooling is inherited: Vite and @vitejs/plugin-react (MIT), TypeScript (Apache 2.0), Oxlint (MIT), and TypeScript definition packages (MIT). Their installed notices remain with their npm packages; they are not browser-runtime code. No claim is made that this document is a legal review.
 

@@ -1,0 +1,100 @@
+{
+  "matrix": [
+    {
+      "activeTabVisible": true,
+      "client": 360,
+      "mainOverflow": 0,
+      "railPosition": "fixed",
+      "scroll": 360,
+      "theme": "light",
+      "width": 360
+    },
+    {
+      "activeTabVisible": true,
+      "client": 390,
+      "mainOverflow": 0,
+      "railPosition": "fixed",
+      "scroll": 390,
+      "theme": "light",
+      "width": 390
+    },
+    {
+      "activeTabVisible": true,
+      "client": 768,
+      "mainOverflow": 0,
+      "railPosition": "sticky",
+      "scroll": 768,
+      "theme": "light",
+      "width": 768
+    },
+    {
+      "activeTabVisible": true,
+      "client": 1280,
+      "mainOverflow": 0,
+      "railPosition": "sticky",
+      "scroll": 1280,
+      "theme": "light",
+      "width": 1280
+    },
+    {
+      "activeTabVisible": true,
+      "client": 1920,
+      "mainOverflow": 0,
+      "railPosition": "sticky",
+      "scroll": 1920,
+      "theme": "light",
+      "width": 1920
+    },
+    {
+      "activeTabVisible": true,
+      "client": 360,
+      "mainOverflow": 0,
+      "railPosition": "fixed",
+      "scroll": 360,
+      "theme": "dark",
+      "width": 360
+    },
+    {
+      "activeTabVisible": true,
+      "client": 390,
+      "mainOverflow": 0,
+      "railPosition": "fixed",
+      "scroll": 390,
+      "theme": "dark",
+      "width": 390
+    },
+    {
+      "activeTabVisible": true,
+      "client": 768,
+      "mainOverflow": 0,
+      "railPosition": "sticky",
+      "scroll": 768,
+      "theme": "dark",
+      "width": 768
+    },
+    {
+      "activeTabVisible": true,
+      "client": 1280,
+      "mainOverflow": 0,
+      "railPosition": "sticky",
+      "scroll": 1280,
+      "theme": "dark",
+      "width": 1280
+    },
+    {
+      "activeTabVisible": true,
+      "client": 1920,
+      "mainOverflow": 0,
+      "railPosition": "sticky",
+      "scroll": 1920,
+      "theme": "dark",
+      "width": 1920
+    }
+  ],
+  "lastTabClose": {
+    "count": 1,
+    "id": "workspace-tab-b632d62e-d1b4-4ce5-930d-b20b359c0275",
+    "mode": "demo",
+    "selected": 0
+  }
+}

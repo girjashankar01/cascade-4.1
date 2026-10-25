@@ -1,7 +1,8 @@
 # Frontend redesign plan — Stage 0
 
 Date: 2026-10-26 (Asia/Calcutta)
-Status: READY FOR HUMAN APPROVAL AND INDEPENDENT PLAN REVIEW. No application changes in Stage 0.
+Status: Stage 0 approved/reviewed; Stage 1 PASS; Stage 2 built, pending independent review. Stage 0 itself changed no application code.
+Scope update, 2026-10-26: the owner explicitly requested skipping the landing page. Marketing sections, hero/story, pinned landing sequence, mini-demo, landing-only Lenis and landing social assets are omitted. `/` now redirects directly to `/app`. Continue the workbench stages and their review gates. The original landing proposals below are historical context, superseded by this update.
 Product: DAO Accountability Engine (existing repository name; no invented brand).
 Repository: `https://github.com/girjashankar01/cascade-4.1.git`
 Working checkout: `C:/Users/abhig/OneDrive/Desktop/Cascade 4.1/cascade-4.1`
@@ -191,7 +192,7 @@ Honest limits everywhere relevant: simulated governance; single trusted verifier
 | 2 | Router/shell/tabs/rail and typed fixture/live boundary; adapter unit tests for variant responses and malformed/unknown verdicts; per-tab state and global live lock; STOP |
 | 3 | Four scenario flows, preview/progress/result/balances/reset/drawer; fixture invariants, repeat/reset, prevented duplicate runs, offline route interactions, technical-data hiding. Live B3 and A re-seed require the backend owner to supply missing scripts/deploy_and_seed.py and upgrade contracts before live integration can be verified; STOP |
 | 4 | Request/plan/record/coverage pages; evidence/conflict/uncertainty/history plus loading/empty/error states and per-workspace context; STOP |
-| 5 | Nine-section landing, story, pinned scene, isolated mini-demo, sharing metadata/preview; responsive scroll/replay, no inaccessible hidden text; STOP |
+| 5 | SKIPPED by owner: no marketing landing, hero, 60-second story, pinned scene, mini-demo or landing-only dependencies. Root opens the workbench; style tile is development-only already |
 | 6 | Fixture pitch, keyboard/navigation/hints, balanced state changes and restoration; offline rehearsal; STOP |
 | 7 | Full regression, mobile/accessibility/performance/anti-slop sweep, truthful run/pitch docs; independent FINAL-REVIEW.md required |
 

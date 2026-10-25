@@ -1,0 +1,25 @@
+{
+  "routeChecks": [
+    {
+      "requested": "/app/payment-request/",
+      "url": "http://127.0.0.1:4173/app/payment-request/?mode=demo",
+      "heading": "Payment request"
+    },
+    {
+      "requested": "/missing-page",
+      "url": "http://127.0.0.1:4173/missing-page",
+      "heading": "This page is not available."
+    },
+    {
+      "requested": "/style-tile",
+      "url": "http://127.0.0.1:4173/app?mode=demo",
+      "heading": "Execution workbench"
+    },
+    {
+      "requested": "/",
+      "url": "http://127.0.0.1:4173/app?mode=demo",
+      "heading": "Execution workbench"
+    }
+  ],
+  "cleanConsole": []
+}

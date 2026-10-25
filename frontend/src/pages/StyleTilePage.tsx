@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useTheme } from '../app/theme'
 import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
 import { StatusMark } from '../components/ui/StatusMark'
@@ -18,8 +19,7 @@ const swatches = [
 export function StyleTilePage() {
   const [engaged, setEngaged] = useState(false)
   const [selected, setSelected] = useState('valid')
-  const [reducePreviewMotion, setReducePreviewMotion] = useState(false)
-  useEffect(() => () => { delete document.documentElement.dataset.reduceMotion }, [])
+  const { reduceMotion, setReduceMotion } = useTheme()
   function resetPreview() { setEngaged(false); setSelected('valid') }
   return (
     <>
@@ -45,7 +45,7 @@ export function StyleTilePage() {
                 <p>{engaged ? 'The approved plan is held in place.' : 'One clear movement. One visible state.'}</p>
               </figcaption>
               <Button className="lock-action" onClick={() => setEngaged(!engaged)}>{engaged ? 'Release the lock' : 'Engage the lock'}<Icon name="arrow" /></Button>
-              <label className="motion-choice"><input type="checkbox" checked={reducePreviewMotion} onChange={event => { document.documentElement.dataset.reduceMotion = String(event.target.checked); setReducePreviewMotion(event.target.checked) }} />Reduce preview motion</label>
+              <label className="motion-choice"><input type="checkbox" checked={reduceMotion} onChange={event => setReduceMotion(event.target.checked)} />Reduce preview motion</label>
             </figure>
           </section>
           <section id="foundations" className="foundation-section palette-section" aria-labelledby="palette-title">
