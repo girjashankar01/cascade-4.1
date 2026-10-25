@@ -92,7 +92,7 @@ Backend modules: FastAPI routes/main; SQLite database; ingestion PDF/OCR; claims
 
 ## 5. Proposed routes and files
 
-Routes: `/` landing; `/style-tile` Stage 1 visual review; `/app` current workspace; `/app/payment-request`; `/app/approved-plan`; `/app/record`; `/app/coverage`. Invalid routes have a plain-language return link. Workbench section anchors: #scenario, #run, #result, #balances, #details. Route navigation and workspace selection are separate concerns.
+Routes: `/` landing; `/style-tile` Stage 1 visual review; `/app` current workspace; `/app/payment-request`; `/app/approved-plan`; `/app/record`; `/app/coverage`. The temporary style tile will be removed from the shipped application before Stage 5; Stage 1 uses `/` as a temporary alias for easy review. Invalid routes have a plain-language return link. Workbench section anchors: #scenario, #run, #result, #balances, #details. Route navigation and workspace selection are separate concerns.
 
 ```text
 frontend/src/
@@ -137,6 +137,8 @@ Default `?mode=demo`; settings allow demo/live. `VITE_API_BASE_URL` defaults to 
 
 Fixtures cover scenarios, preview, all step states, result, three-role balances, source claims/quotes/conflicts, approved versions, record, reset, and pitch. Label every fixture surface **Demo data · test tokens**; never present timed animation as an observed backend step. Live requests use indeterminate waiting followed by actual response-derived steps; demo runs may stage Read/Lock/Check/Enforce.
 
+The proposed story fixture is `StoryFrame[]`, each with `id`, `step` (problem/read/lock/check/enforce/result), `label`, `durationMs`, `transcript`, and optional `scenarioId` (A/B1) and visual state. Frame durations total 60,000ms. Playback position, pause/restart and transcript derive from this one typed sequence, isolated from live workspaces and served locally. This is a proposed frontend contract, not an observed backend response.
+
 Initial fixture balances: shared fund 1,000,000 test USDC; recipient 0; bad actor 0. A moves exactly 1,000,000 to recipient; B1 attempts 2,000,000 to bad actor and moves none; B3 moves none and leaves implementation unchanged. C restores the initial fixture state and approved plan. These are explicitly authored demo examples based on runner constants/charter, not recorded live results. Each fixture run begins from its documented starting snapshot so repeated sessions are deterministic; show that reset before replay rather than disguising continuity.
 
 Live flow: validate backend and chain separately, read verified initial balances and approved-plan metadata, POST runner once, adapt the response, read final balances and resolve execution evidence. B3 uses upgrade semantics rather than payment rows invented from a payout. C uses reset semantics. Any missing required metadata keeps the result incomplete with an honest next step. Do not issue a changing operation to discover whether an endpoint exists.
@@ -166,6 +168,8 @@ All shared values live in design/tokens.css (CSS variables), with motion.ts read
 
 These are proposals, not verified contrast or license claims. Stage 1 measures every supported text/background pair (4.5:1 normal, 3:1 large), focus/control contrast, and disabled states before approval. Avoid green/red for decoration or generic connection states. Landing defaults dark; workbench defaults light; user override applies intentionally and remains switchable.
 
+Expected font license is SIL OFL 1.1: [Space Grotesk](https://github.com/floriankarsten/space-grotesk/blob/master/OFL.txt), [Source Sans 3](https://github.com/adobe-fonts/source-sans/blob/release/LICENSE.md), and [IBM Plex Mono](https://github.com/IBM/plex/blob/master/LICENSE.txt). Stage 1 verifies the actual installed license notices and preserves them alongside shipped font assets.
+
 Use Motion for animation, Lenis on landing only and disabled for reduced motion. Use React Router for routes and a small accessible dialog primitive if needed; confirm installed compatibility and exact licenses before adding. No broad UI kit. No database/design-tool requirement blocks work: the referenced UI UX Pro Max/Impeccable tools are not assumed installed. If unavailable, document that and perform measured/manual checks; never claim their detectors ran. Record all dependency/font/component sources and license files in LICENSES-AND-SOURCES.md. Use original UI components where practical.
 
 ## 8. Interaction, landing and pitch
@@ -185,7 +189,7 @@ Honest limits everywhere relevant: simulated governance; single trusted verifier
 | 0 | This inventory/plan/decisions/build handoff; baseline install/build/lint/typecheck outcomes; STOP for human + independent review |
 | 1 | Tokens, themes, source/license table, original lock, style tile; measured contrast, keyboard and widths in both themes; STOP |
 | 2 | Router/shell/tabs/rail and typed fixture/live boundary; adapter unit tests for variant responses and malformed/unknown verdicts; per-tab state and global live lock; STOP |
-| 3 | Four scenario flows, preview/progress/result/balances/reset/drawer; fixture invariants, repeat/reset, prevented duplicate runs, offline route interactions, technical-data hiding; STOP |
+| 3 | Four scenario flows, preview/progress/result/balances/reset/drawer; fixture invariants, repeat/reset, prevented duplicate runs, offline route interactions, technical-data hiding. Live B3 and A re-seed require the backend owner to supply missing scripts/deploy_and_seed.py and upgrade contracts before live integration can be verified; STOP |
 | 4 | Request/plan/record/coverage pages; evidence/conflict/uncertainty/history plus loading/empty/error states and per-workspace context; STOP |
 | 5 | Nine-section landing, story, pinned scene, isolated mini-demo, sharing metadata/preview; responsive scroll/replay, no inaccessible hidden text; STOP |
 | 6 | Fixture pitch, keyboard/navigation/hints, balanced state changes and restoration; offline rehearsal; STOP |
@@ -201,3 +205,5 @@ Performance checks at final stage: production bundle breakdown, mobile-throttled
 2. What is the target pitch device and event emphasis? Default: desktop laptop presentation at 1280px+, responsive 360px support; prioritize clear enforcement story, honest limits and deterministic fixtures. No public deployment until requested.
 
 Product, scenario C, workspace semantics, rail behavior, stack and branch are already inferable; no redundant questions. These defaults allow planning; human approval and independent Stage 0 review remain mandatory before app code.
+
+Owner status (2026-10-26): the human explicitly requested starting Stage 1 while review was in progress; the independent verdict has since arrived as PASS WITH NOTES, with no BLOCKER/MAJOR. That authorizes Stage 1. The reviewer marked R0-05 FIXED in afbd1fc following plan approval. Retain the proposed API/device defaults for planning and verify the actual event environment before final rehearsal; no deployed URL or device benchmark is claimed.

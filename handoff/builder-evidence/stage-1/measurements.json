@@ -1,0 +1,72 @@
+{
+  "matrix": [
+    {
+      "overflowCount": 0,
+      "scroll": 360,
+      "theme": "light",
+      "width": 360
+    },
+    {
+      "overflowCount": 0,
+      "scroll": 390,
+      "theme": "light",
+      "width": 390
+    },
+    {
+      "overflowCount": 0,
+      "scroll": 768,
+      "theme": "light",
+      "width": 768
+    },
+    {
+      "overflowCount": 0,
+      "scroll": 1280,
+      "theme": "light",
+      "width": 1280
+    },
+    {
+      "overflowCount": 0,
+      "scroll": 1920,
+      "theme": "light",
+      "width": 1920
+    },
+    {
+      "overflowCount": 0,
+      "scroll": 360,
+      "theme": "dark",
+      "width": 360
+    },
+    {
+      "overflowCount": 0,
+      "scroll": 390,
+      "theme": "dark",
+      "width": 390
+    },
+    {
+      "overflowCount": 0,
+      "scroll": 768,
+      "theme": "dark",
+      "width": 768
+    },
+    {
+      "overflowCount": 0,
+      "scroll": 1280,
+      "theme": "dark",
+      "width": 1280
+    },
+    {
+      "overflowCount": 0,
+      "scroll": 1920,
+      "theme": "dark",
+      "width": 1920
+    }
+  ],
+  "reduced": {
+    "duration": "0s",
+    "hiddenHeadings": 0,
+    "reducedPreview": "true",
+    "scroll": "auto",
+    "status": "Lock engaged",
+    "systemPreference": false
+  }
+}

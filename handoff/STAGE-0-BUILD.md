@@ -72,3 +72,15 @@ The first sandbox-hosted Vite server could not be reached by the browser and was
 Human: approve `handoff/PLAN.md` or provide changes.
 
 Independent reviewer: read PLAN.md and this build file; write `handoff/STAGE-0-REVIEW.md` with PASS / PASS WITH NOTES / FAIL and any findings. Stage 1 starts only after human approval and a passing verdict with no open BLOCKER or MAJOR.
+
+## Fixes following Stage 0 review
+
+2026-10-26: Review a7c786a is PASS WITH NOTES, no BLOCKER/MAJOR. Human then explicitly requested starting Stage 1. Plan edits for reviewer re-verification:
+
+- R0-01: Stage 3 delivery row now names missing deploy_and_seed.py/upgrade-contract dependencies before live B3/A re-seed verification.
+- R0-02: Design-system section now links each font's canonical source/license and names expected SIL OFL 1.1; Stage 1 verifies installed notices in LICENSES-AND-SOURCES.md.
+- R0-03: Data section now defines StoryFrame sequence fields, total 60-second duration, transcript and playback ownership; this is a proposed frontend shape, not a backend claim.
+- R0-04: Explicitly remove temporary /style-tile before Stage 5; / is a temporary Stage 1 review alias.
+- R0-05: Reviewer marked FIXED in afbd1fc following human plan approval. Use proposed defaults for planning; validate actual API hosting and pitch device before final rehearsal without claiming a deployed endpoint or device test.
+
+Please re-verify these notes; reviewer-owned OPEN-ISSUES.md is untouched.

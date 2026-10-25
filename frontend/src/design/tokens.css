@@ -1,0 +1,152 @@
+/* Shared values. Breakpoints: compact 44rem, wide 68rem. */
+:root {
+  --font-display: 'Space Grotesk', 'Segoe UI', sans-serif;
+  --font-body: 'Source Sans 3', 'Segoe UI', sans-serif;
+  --font-technical: 'IBM Plex Mono', Consolas, monospace;
+  --text-sm: 1rem;
+  --text-body: 1.125rem;
+  --text-lead: 1.25rem;
+  --text-title: 1.5rem;
+  --text-heading: clamp(1.75rem, 3vw, 2.25rem);
+  --text-display: clamp(2.75rem, 5.7vw, 4.75rem);
+  --text-specimen: clamp(3rem, 7vw, 6rem);
+  --leading-body: 1.5;
+  --leading-heading: 1.15;
+  --leading-display: 1.05;
+  --tracking-display: -0.055em;
+  --tracking-heading: -0.035em;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+  --space-9: 6rem;
+  --page-gutter: clamp(1.25rem, 4vw, 4rem);
+  --content-max: 80rem;
+  --measure: 70ch;
+  --measure-short: 42ch;
+  --hero-measure: 13ch;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --border-width: 1px;
+  --focus-width: 3px;
+  --focus-offset: 4px;
+  --control-height: 3rem;
+  --touch-target: 2.75rem;
+  --icon-size: 1.25rem;
+  --brand-size: 2rem;
+  --card-min-height: 10.5rem;
+  --lock-width: 23rem;
+  --lock-ratio: 360 / 390;
+  --lock-fallback-size: 5rem;
+  --lock-rest-y: -40;
+  --lock-engaged-y: 0;
+  --motion-duration-quick: 0.12s;
+  --motion-duration-enter: 0.24s;
+  --motion-duration-explain: 0.6s;
+  --motion-ease-points: 0.2, 0, 0, 1;
+  --motion-ease: cubic-bezier(var(--motion-ease-points));
+  --motion-press-y: 1px;
+  --line-decoration: 2px;
+  --swatch-height: 5rem;
+  --swatch-marker-size: 1.5rem;
+  --radio-dot-size: 0.5rem;
+  --check-width: 0.375rem;
+  --check-height: 0.75rem;
+  --check-stroke: 2px;
+  --layer-skip: 10;
+  /* Material colors belong only to the original lock artwork. */
+  --lock-metal-top: #67736b;
+  --lock-metal-mid: #344039;
+  --lock-metal-bottom: #1c2721;
+  --lock-metal-edge: #121d17;
+  --lock-metal-highlight: #8a958c;
+  --lock-steel-light: #e0e5df;
+  --lock-steel-mid: #8a968d;
+  --lock-steel-dark: #46524a;
+  --lock-brass-light: #f6ce8c;
+  --lock-brass-dark: #a67232;
+  --lock-brass-edge: #755226;
+  --lock-keyhole: #101a14;
+  --lock-shadow: #142119;
+  --lock-shadow-opacity: 0.13;
+  --lock-detail-opacity: 0.4;
+}
+
+:root, :root[data-theme='light'] {
+  color-scheme: light;
+  --color-canvas: #f5f7f4;
+  --color-surface: #ffffff;
+  --color-recessed: #e9eee8;
+  --color-text: #17231d;
+  --color-muted: #53635a;
+  --color-divider: #d4ddd5;
+  --color-control-border: #748278;
+  --color-action: #f2b35c;
+  --color-action-hover: #e9a74a;
+  --color-action-active: #e4a044;
+  --color-action-ink: #17231d;
+  --color-action-border: #8a5a18;
+  --color-attention: #6b420b;
+  --color-attention-surface: #fbe9cc;
+  --color-allowed: #22643c;
+  --color-allowed-surface: #e1f0e6;
+  --color-blocked: #9b302e;
+  --color-blocked-surface: #f9e9e7;
+  --color-focus: #8a5a18;
+  --color-selection: #fbe9cc;
+  --color-selection-ink: #17231d;
+  --shadow-control: 0 2px 0 #6b420b;
+  --shadow-float: 0 12px 32px rgb(23 35 29 / 0.12);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-canvas: #111b18;
+  --color-surface: #1b2723;
+  --color-recessed: #24332b;
+  --color-text: #f5f7f4;
+  --color-muted: #b2beb6;
+  --color-divider: #394a40;
+  --color-control-border: #81988b;
+  --color-action: #f2b35c;
+  --color-action-hover: #fac479;
+  --color-action-active: #e9a74a;
+  --color-action-ink: #17231d;
+  --color-action-border: #f2b35c;
+  --color-attention: #f2b35c;
+  --color-attention-surface: #3b2f1c;
+  --color-allowed: #a6dfba;
+  --color-allowed-surface: #153d29;
+  --color-blocked: #ffc1bd;
+  --color-blocked-surface: #4a2423;
+  --color-focus: #f2b35c;
+  --color-selection: #f2b35c;
+  --color-selection-ink: #17231d;
+  --shadow-control: 0 2px 0 #a67232;
+  --shadow-float: 0 12px 32px rgb(0 0 0 / 0.2);
+  --lock-shadow-opacity: 0.3;
+}
+
+:root[data-reduce-motion='true'] {
+  --motion-duration-quick: 0s;
+  --motion-duration-enter: 0s;
+  --motion-duration-explain: 0s;
+  --motion-press-y: 0px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration-quick: 0s;
+    --motion-duration-enter: 0s;
+    --motion-duration-explain: 0s;
+    --motion-press-y: 0px;
+  }
+}

@@ -18,3 +18,11 @@
 2026-10-26 — Use available measured/manual design checks if named external design databases/detectors are unavailable; never claim unrun tools.
 2026-10-26 — Explain approved intent versus protected execution without implying OpenZeppelin Governor permits post-vote calldata substitution.
 2026-10-26 — Keep reviewer-owned files untouched and preserve existing reviewer commits; builder handoffs carry actual checks and known weaknesses.
+2026-10-26 — Owner explicitly requested Stage 1 while Stage 0 was under review; review a7c786a has since arrived as PASS WITH NOTES with no BLOCKER/MAJOR, so proceed within Stage 1 only.
+2026-10-26 — Address R0-01/R0-02/R0-03 in PLAN.md by adding live-integration delivery dependency, canonical font-license links, and a typed StoryFrame sequence; request reviewer re-verification rather than close issues ourselves.
+2026-10-26 — Address R0-04 by removing the temporary style tile before Stage 5; root is a temporary review alias until routing is built. Reviewer marked R0-05 FIXED in afbd1fc on human plan approval; retain defaults for planning and validate the actual event environment before rehearsal.
+2026-10-26 — Ship Space Grotesk 500 and Source Sans 3 400/600 Latin WOFF2 only, with swap and local fallbacks; IBM Plex Mono is installed/reserved but not loaded until a technical drawer exists.
+2026-10-26 — Verify installed OFL/MIT/0BSD runtime notices and copy them to public/licenses so deployment retains them; tslib 2.8.1 is 0BSD, verified from its installed notice and package metadata. No borrowed component library is needed.
+2026-10-26 — Use native labelled radio/checkbox controls and original UI primitives, explicit focus outlines, no entrance-hidden content, and a lazy original SVG lock with a static fallback.
+2026-10-26 — Lock motion occurs only after a user action; CSS is the single source of duration/easing/position tokens, with system reduced-motion rules and an additional style-tile preview override.
+2026-10-26 — Use token-derived WCAG contrast calculation for supported semantic text/focus/control pairs and manual browser/DOM checks; do not claim unavailable Impeccable/axe/OS emulation ran.
