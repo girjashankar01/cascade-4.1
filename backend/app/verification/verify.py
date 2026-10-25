@@ -78,13 +78,39 @@ class VerificationReport:
 
 
 def scan_bytecode(code: bytes) -> Tuple[Set[str], Set[str]]:
-    """Scan EVM runtime code for candidate function selectors and control opcodes."""
+    """Scan EVM runtime code for candidate function selectors and control opcodes.
+
+    Heuristic Mechanics & Boundary Guarantees:
+    - Scans EVM instructions sequentially.
+    - When a PUSH1..PUSH32 instruction (0x60 <= op <= 0x7F) is encountered,
+      the parser advances `1 + n` bytes, skipping the `n` immediate-data bytes.
+      This ensures that constant bytes inside addresses, hashes, or numbers
+      (such as a raw 0x63 or 0xF4 byte) are NOT misinterpreted as opcodes.
+    - When `op == 0x63` (PUSH4), if at least 4 immediate bytes remain, the
+      candidate 4-byte constant is recorded (e.g. function selector candidate
+      in standard Solidity dispatch tables).
+    - If a PUSH instruction is truncated at the end of the bytecode, the scanner
+      safely terminates without IndexError.
+
+    Security Limitations & Scope:
+    - Candidate 4-byte constants include function selectors used in dispatch
+      tables (`PUSH4 <selector> EQ ...`), but may also include 4-byte numeric literals.
+    - Static opcode scanning is a defensive heuristic filter, NOT a complete
+      proof of safety against arbitrary obfuscated bytecode, unaligned jump
+      destinations, or dynamic delegatecall targets.
+    - Full safety is achieved in defense-in-depth: Rule R6 (storage slot immutability),
+      Rule R7 (selector whitelist and optional code hash), and on-chain GuardedExecutor.
+    """
+    if not code:
+        return set(), set()
+
     i, ops, sels = 0, set(), set()
-    while i < len(code):
+    code_len = len(code)
+    while i < code_len:
         op = code[i]
         if 0x60 <= op <= 0x7F:  # PUSH1..PUSH32
             n = op - 0x5F
-            if n == 4 and i + 5 <= len(code):
+            if n == 4 and i + 5 <= code_len:
                 sels.add("0x" + code[i + 1 : i + 5].hex().lower())
             i += 1 + n
         else:

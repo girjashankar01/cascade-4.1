@@ -489,12 +489,13 @@ def run_scenario_c(
 
     # 1. Reset tables in SQLite
     with get_db_connection(db_path) as conn:
-        conn.execute("DELETE FROM claims WHERE proposal_id IN ('PROP-002', 'PROP-B1', 'PROP-001')")
-        conn.execute("DELETE FROM conflicts WHERE proposal_id IN ('PROP-002', 'PROP-B1', 'PROP-001')")
-        conn.execute("DELETE FROM manifests WHERE proposal_id IN ('PROP-002', 'PROP-B1', 'PROP-001')")
-        conn.execute("DELETE FROM versions WHERE proposal_id IN ('PROP-002', 'PROP-B1', 'PROP-001')")
-        conn.execute("DELETE FROM verifications WHERE proposal_id IN ('PROP-002', 'PROP-B1', 'PROP-001')")
-        conn.execute("DELETE FROM analyses WHERE proposal_id IN ('PROP-002', 'PROP-B1', 'PROP-001')")
+        demo_pids = "('PROP-001', 'PROP-002', 'PROP-B1', 'PROP-B2', 'PROP-B3')"
+        conn.execute(f"DELETE FROM claims WHERE proposal_id IN {demo_pids}")
+        conn.execute(f"DELETE FROM conflicts WHERE proposal_id IN {demo_pids}")
+        conn.execute(f"DELETE FROM manifests WHERE proposal_id IN {demo_pids}")
+        conn.execute(f"DELETE FROM versions WHERE proposal_id IN {demo_pids}")
+        conn.execute(f"DELETE FROM verifications WHERE proposal_id IN {demo_pids}")
+        conn.execute(f"DELETE FROM analyses WHERE proposal_id IN {demo_pids}")
 
     steps: List[Dict[str, Any]] = [
         {

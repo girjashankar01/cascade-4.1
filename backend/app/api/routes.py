@@ -409,9 +409,14 @@ def get_claims_for_proposal(pid: str) -> Dict[str, Any]:
 @router.get("/proposals/{pid}/coi", response_model=Dict[str, Any])
 def get_proposal_coi_endpoint(pid: str) -> Dict[str, Any]:
     """Return Conflict-of-Interest (COI) wallet provenance and linkage graph analysis."""
+    if not pid or not pid.strip():
+        raise HTTPException(status_code=400, detail="Invalid proposal ID")
     from app.claims.coi import get_proposal_coi_analysis
-    report = get_proposal_coi_analysis(proposal_id=pid)
-    return report.to_dict()
+    try:
+        report = get_proposal_coi_analysis(proposal_id=pid)
+        return report.to_dict()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/audit/{pid}", response_model=List[Dict[str, Any]])

@@ -229,3 +229,72 @@ def test_rule_r7_detects_undeclared_selector(monkeypatch):
     assert "Undeclared selector candidates detected" in r7.explanation
     assert SEL_SWEEP in r7.evidence["undeclared_selectors"]
 
+
+def test_scan_bytecode_skips_push_immediate_data():
+    """Verify that bytes inside PUSH immediate data (e.g. 0x63 or 0xF4) are not parsed as opcodes."""
+    # PUSH32 where internal data contains 0x63 (PUSH4 opcode) and 0xF4 (DELEGATECALL opcode)
+    fake_push4_inside_data = bytes.fromhex("6335faa416")  # 5 bytes
+    fake_delegatecall_inside = bytes.fromhex("f4")         # 1 byte
+    push32_payload = b"\x00" * 10 + fake_push4_inside_data + b"\x00" * 10 + fake_delegatecall_inside + b"\x00" * 6
+    assert len(push32_payload) == 32
+
+    # Opcode 0x7F = PUSH32 followed by 32 bytes of immediate data
+    code = bytes.fromhex("7f") + push32_payload
+
+    ops, sels = scan_bytecode(code)
+    # The immediate data bytes must be skipped: no DELEGATECALL, no candidate selector
+    assert "DELEGATECALL" not in ops
+    assert "0x35faa416" not in sels
+    assert len(sels) == 0
+
+
+def test_scan_bytecode_boundary_and_truncated_push():
+    """Verify scanner handles empty code and truncated PUSH instructions safely."""
+    # Empty code
+    ops, sels = scan_bytecode(b"")
+    assert len(ops) == 0 and len(sels) == 0
+
+    # Truncated PUSH4 at EOF (only 2 bytes of data instead of 4)
+    ops, sels = scan_bytecode(bytes.fromhex("631122"))
+    assert len(sels) == 0
+
+    # Truncated PUSH32 at EOF (only 1 byte of data instead of 32)
+    ops, sels = scan_bytecode(bytes.fromhex("7faa"))
+    assert len(ops) == 0 and len(sels) == 0
+
+
+def test_scan_real_compiled_artifacts_and_zero_false_positives():
+    """Verify real compiled BoxUUPS, BoxV2, and BoxEvil bytecode artifacts from Foundry."""
+    import json
+    from pathlib import Path
+
+    out_dir = Path(__file__).resolve().parents[2] / "contracts" / "out"
+    uups_path = out_dir / "BoxUUPS.sol" / "BoxUUPS.json"
+    v2_path = out_dir / "BoxV2.sol" / "BoxV2.json"
+    evil_path = out_dir / "BoxEvil.sol" / "BoxEvil.json"
+
+    if not (uups_path.exists() and v2_path.exists() and evil_path.exists()):
+        pytest.skip("Foundry artifacts not compiled")
+
+    u_code = bytes.fromhex(json.loads(uups_path.read_text())["deployedBytecode"]["object"].replace("0x", ""))
+    v2_code = bytes.fromhex(json.loads(v2_path.read_text())["deployedBytecode"]["object"].replace("0x", ""))
+    evil_code = bytes.fromhex(json.loads(evil_path.read_text())["deployedBytecode"]["object"].replace("0x", ""))
+
+    _, u_sels = scan_bytecode(u_code)
+    _, v2_sels = scan_bytecode(v2_code)
+    _, evil_sels = scan_bytecode(evil_code)
+
+    # 1. BoxEvil contains undeclared backdoor sweep() selector 0x35faa416
+    assert "0x35faa416" in evil_sels
+    new_evil_sels = evil_sels - u_sels
+    assert "0x35faa416" in new_evil_sels
+
+    # 2. BoxV2 has exactly one new function relative to baseline: increment() -> 0xd09de08a
+    new_v2_sels = v2_sels - u_sels
+    assert new_v2_sels == {"0xd09de08a"}
+
+    # 3. When 0xd09de08a is declared in governance, undeclared selectors is strictly empty
+    declared = {"0xd09de08a"}
+    whitelist = u_sels | declared
+    undeclared_v2 = v2_sels - whitelist
+    assert len(undeclared_v2) == 0  # Zero false positives!

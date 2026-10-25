@@ -42,6 +42,7 @@ class COIReport:
     edges: List[Dict[str, Any]]
     undisclosed_connections: List[Dict[str, Any]]
     summary: str
+    is_demo_data: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -59,7 +60,40 @@ def get_proposal_coi_analysis(
     - Seeded and observed on-chain funding relationships.
     - Graph pathfinding between proposer and recipient.
     - Undisclosed intermediary connections.
+
+    Note on Interpretation:
+    - Provenance results reflect observed graph linkage and financial proximity.
+    - They must not be interpreted as definitive proof of wrongdoing or subjective intent.
+    - Demonstrates graph analysis over seeded/disclosed data, not live blockchain indexing.
     """
+    if not proposal_id or not proposal_id.strip():
+        raise ValueError("Invalid proposal ID")
+
+    pid_clean = proposal_id.strip().upper()
+
+    # If proposal is a protocol upgrade (PROP-B2, PROP-B3), no grant recipient exists
+    if pid_clean.startswith("PROP-B2") or pid_clean.startswith("PROP-B3") or pid_clean.startswith("PROP-UPGRADE"):
+        prop_addr = (proposer or DEFAULT_PROPOSER_ADDR).lower()
+        return COIReport(
+            proposal_id=proposal_id,
+            proposer_address=prop_addr,
+            recipient_address="",
+            has_linkage=False,
+            shortest_path=[],
+            nodes=[
+                asdict(WalletNode(
+                    address=prop_addr,
+                    label="Proposer Main Wallet",
+                    category="proposer",
+                    is_declared=True,
+                ))
+            ],
+            edges=[],
+            undisclosed_connections=[],
+            summary="Protocol contract upgrade proposal: No grant recipient or funding intermediary linkage evaluated.",
+            is_demo_data=True,
+        )
+
     prop_addr = (proposer or DEFAULT_PROPOSER_ADDR).lower()
     rec_addr = (recipient or DEFAULT_RECIPIENT_ADDR).lower()
     shell_addr = SHELL_INTERMEDIARY_ADDR.lower()
@@ -152,9 +186,10 @@ def get_proposal_coi_analysis(
     ]
 
     summary = (
-        f"Linkage evidence detected: Proposer ({prop_addr[:8]}...) is connected to Recipient "
-        f"({rec_addr[:8]}...) via a 2-hop funding path through undisclosed intermediary {shell_addr[:8]}... "
-        f"Evidence strength: high (verified on-chain transfers)."
+        f"Linkage evidence detected: Proposer ({prop_addr[:8]}...) is connected to Beneficiary "
+        f"({rec_addr[:8]}...) via a 2-hop funding path through intermediary {shell_addr[:8]}... "
+        f"(Horizon Labs). Note: This reflects on-chain transfer linkage and financial proximity, "
+        f"not proof of subjective intent or wrongdoing."
     )
 
     return COIReport(
@@ -167,4 +202,5 @@ def get_proposal_coi_analysis(
         edges=[asdict(e) for e in edges],
         undisclosed_connections=undisclosed,
         summary=summary,
+        is_demo_data=True,
     )

@@ -98,10 +98,15 @@ class OnlineLLMProvider(LLMProvider):
         try:
             with httpx.Client(timeout=self.timeout_s) as client:
                 response = client.post(endpoint, headers=headers, json=body)
-                if response.status_code in (429, 500, 502, 503, 504):
-                    raise LLMUnavailableError(
-                        f"LLM provider error (status {response.status_code}): {response.text}"
-                    )
+                if response.status_code == 429:
+                    retry_after = response.headers.get("Retry-After") or response.headers.get("retry-after")
+                    detail = f", retry after {retry_after}s" if retry_after else ""
+                    raise LLMUnavailableError(f"LLM rate limit exceeded (HTTP 429){detail}")
+                elif response.status_code in (500, 502, 503, 504):
+                    raise LLMUnavailableError(f"LLM provider service error (HTTP {response.status_code})")
+                elif response.status_code >= 400:
+                    raise LLMUnavailableError(f"LLM provider returned client error (HTTP {response.status_code})")
+
                 response.raise_for_status()
                 data = response.json()
                 content = data["choices"][0]["message"]["content"]
@@ -112,13 +117,18 @@ class OnlineLLMProvider(LLMProvider):
                     return parsed["claims"]
                 raise ValueError("Model output did not contain a JSON list of claims")
         except httpx.TimeoutException as e:
-            raise LLMUnavailableError(f"LLM request timed out after {self.timeout_s}s") from e
+            raise LLMUnavailableError(f"LLM request timed out after {self.timeout_s:.1f}s") from e
+        except (httpx.ConnectError, httpx.NetworkError) as e:
+            raise LLMUnavailableError("LLM provider connection failed (network/DNS error)") from e
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON response from LLM: {e}") from e
         except Exception as e:
             if isinstance(e, LLMUnavailableError):
                 raise
-            raise LLMUnavailableError(f"Failed to communicate with LLM provider: {e}") from e
+            err_str = str(e)
+            if self.api_key and self.api_key in err_str:
+                err_str = err_str.replace(self.api_key, "[REDACTED]")
+            raise LLMUnavailableError(f"Failed to communicate with LLM provider: {err_str}") from e
 
     def summarize(self, claims: List[Dict[str, Any]]) -> str:
         """Produce a short summary description from claims."""

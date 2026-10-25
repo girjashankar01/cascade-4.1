@@ -343,10 +343,23 @@ def test_coi_endpoint(client_env):
     data = resp.json()
     assert data["proposal_id"] == "PROP-002"
     assert data["has_linkage"] is True
+    assert data["is_demo_data"] is True
     assert len(data["shortest_path"]) >= 2
     assert len(data["nodes"]) >= 3
     assert len(data["edges"]) >= 2
     assert len(data["undisclosed_connections"]) >= 1
+
+    # Test upgrade proposal (e.g. PROP-B2): has_linkage must be False
+    resp_b2 = client.get("/proposals/PROP-B2/coi")
+    assert resp_b2.status_code == 200
+    data_b2 = resp_b2.json()
+    assert data_b2["has_linkage"] is False
+    assert len(data_b2["shortest_path"]) == 0
+    assert len(data_b2["undisclosed_connections"]) == 0
+
+    # Test invalid / whitespace proposal ID
+    resp_invalid = client.get("/proposals/%20/coi")
+    assert resp_invalid.status_code == 400
 
 
 def test_prop001_conflict_detection(client_env):

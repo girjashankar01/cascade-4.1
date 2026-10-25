@@ -46,7 +46,10 @@ def check_claims_eligibility(
         cursor = conn.cursor()
 
         # 1. Check for unresolved conflicts
-        cursor.execute("SELECT * FROM conflicts WHERE proposal_id = ? AND status = 'UNRESOLVED'", (proposal_id,))
+        cursor.execute(
+            "SELECT * FROM conflicts WHERE proposal_id = ? AND status IN ('UNRESOLVED', 'CONFLICT')",
+            (proposal_id,),
+        )
         conflicts = cursor.fetchall()
         if conflicts:
             conf_details = [f"{c['field']}: {c['display_value_a']} vs {c['display_value_b']}" for c in conflicts]
