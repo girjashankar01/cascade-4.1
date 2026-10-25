@@ -75,5 +75,33 @@ The EIP-712 domain is standardized across Solidity and Python:
 Implemented `backend/app/chain/attest.py` using `eth-account` (v0.14) and `web3.py`.
 - `compute_action_hash` matches Solidity's ABI encoding and Keccak hashing exactly.
 - `sign_attestation` and `get_signable_attestation` construct the exact EIP-712 domain and message dictionary.
-- Cross-language integration tests in `contracts/test/Stage1Core.t.sol` (19 test cases) and `backend/tests/test_interop.py` verify that Python-computed action hashes and Python-generated signatures are verified and executed by the Solidity `GuardedExecutor` contract on a live Anvil instance.
+- Cross-language integration tests in `contracts/test/Stage1Core.t.sol` (21 test cases) and `backend/tests/test_interop.py` verify that Python-computed action hashes and Python-generated signatures are verified and executed by the Solidity `GuardedExecutor` contract on a live Anvil instance.
+
+## 2026-10-25 — Stage 1 contract refinements (prior approval invalidation and mint restriction)
+
+1. `GovernanceRegistry.sol`: When `commitVersion` is called on a proposal that has a prior active approval, `_approved[pid]` is cleared (`delete _approved[pid]`). This strictly implements the build guide requirement: "A text revision with an identical action changes versionHash, so old approvals and attestations stop working." Regression test `test_TextRevision_InvalidatesPriorApproval` added.
+2. `MockToken.sol`: Restricted `mint` function to `deployer` only (`require(msg.sender == deployer, "only deployer")`), preventing unauthorized minting during simulation and test runs. Regression test `test_Revert_MockTokenMint_Unauthorized` added.
+
+## 2026-10-25 — Stage 2 evidence ingestion, schema, and SQLite architecture
+
+1. Ingestion:
+   - PyMuPDF (`pymupdf`) performs native digital text extraction with 1-indexed page numbers.
+   - Usable text threshold is defined at 50 characters per page (`MIN_USABLE_TEXT_LENGTH = 50`); pages below threshold trigger OCR fallback.
+   - OCR fallback uses `ocr_page_bytes` with pluggable mock handler (`_OCR_MOCK_HANDLER`) so tests never download ONNX models.
+   - Files are stored under `data/sources/<sha256>_<filename>` and indexed by content hash for idempotent re-ingestion.
+2. Canonical schema:
+   - Canonical fields are restricted to `amount`, `token`, `recipient`, `purpose`, and `assumptions`. Aliases (`payout_amount`, `budget`, `beneficiary`) are mapped deterministically.
+   - Monetary values normalize to integer strings (`$5.0M` -> `5000000`, `5,000,000` -> `5000000`) using `Decimal`, avoiding floating-point equality errors while preserving original `display_value` and `quote`.
+3. Deterministic text grounding:
+   - Normalization normalizes whitespace, lowercase, quotes, and Unicode dashes (`–`, `—`, `−` -> `-`).
+   - Strict substring inclusion is required; paraphrased or fabricated quotes are marked `REJECTED`.
+   - Numeric values in quotes are cross-checked; mismatch causes `REJECTED`.
+4. Deterministic conflict detection:
+   - Compares grounded claims across differing sources for the same canonical field.
+   - Discrepancies (e.g. `$5.0M` in proposal PDF vs `$5.8M` in forum text) produce a structured `Conflict` object with both quotes and page references, marking affected claims `UNCERTAIN`.
+5. LLM Router, Cache & Audit:
+   - Cache key is `SHA256(prompt_hash:input_hash:model)` persisted in `llm_cache`.
+   - Single retry on schema or JSON failure, then fails closed with `LLM_UNAVAILABLE`.
+   - All attempts log an immutable audit record in `analyses` table without secrets.
+
 

@@ -4,26 +4,47 @@ CASCADE ’26, Problem 4.1. Architectural source of truth:
 [final build guide](docs/dao-build-guide-final.md). The older
 [project handoff](docs/project%20handoff.md) is preserved as background.
 
-Stage 1 core contracts, Python EIP-712 signing, and cross-language on-chain
-verification are fully implemented and passing. Validation status is recorded in
-[handoff.md](handoff.md) and technical decisions in [decisions.md](decisions.md).
+Stages 0, 1, and 2 are fully implemented and verified:
+- **Stage 0:** Environment scaffolding, Python 3.11 via `uv`, Foundry 1.8.6, React/Vite frontend.
+- **Stage 1:** Core contracts (`MockToken`, `GovernanceRegistry`, `Treasury`, `GuardedExecutor`), Python EIP-712 signing, and on-chain verification.
+- **Stage 2:** Evidence ingestion (PDF/plain-text with PyMuPDF & RapidOCR fallback), Pydantic claim schema, deterministic text grounding, numeric cross-checks, cross-source conflict detection, SQLite-backed LLM caching/audit trail, and Stage 2 FastAPI endpoints.
 
-## Stage 1 status and test results
+Validation status is recorded in [handoff.md](handoff.md) and technical decisions in [decisions.md](decisions.md).
 
-- **Solidity contracts (`contracts/src/`):**
-  - `MockToken.sol`: OpenZeppelin ERC-20 (6 decimals) for payout simulation.
-  - `GovernanceRegistry.sol`: Sequential proposal version hash chain with ownership protection and governance-only approvals.
-  - `Treasury.sol`: Holds ETH/tokens; execution restricted strictly to the configured executor.
-  - `GuardedExecutor.sol`: EIP-712 attestation verification (`GuardedExecutor`, `v1`), `VERIFIED == 1` check, actionHash validation, and single-use execution via Treasury.
-- **Python cryptography (`backend/app/chain/attest.py`):**
-  - Exact `actionHash` computation: `keccak256(abi.encode(target, value, keccak256(calldata)))`.
-  - Canonical EIP-712 structured data signing with `eth-account` (v0.14).
+## Stage 1 & 2 status and test results
+
+- **Smart contracts (`contracts/src/`):**
+  - `MockToken.sol`: OpenZeppelin ERC-20 (6 decimals) with deployer-restricted minting.
+  - `GovernanceRegistry.sol`: Sequential 1-indexed proposal hash chain; committing new versions invalidates previous approvals.
+  - `Treasury.sol`: Holds funds; calls restricted strictly to the configured executor.
+  - `GuardedExecutor.sol`: EIP-712 attestation verification (`GuardedExecutor`, `v1`), `VERIFIED == 1` enforcement, actionHash validation, single-use proposal execution.
+- **Backend ingestion & claims (`backend/app/`):**
+  - `ingestion/`: PyMuPDF native extraction (1-indexed pages), 50-character OCR fallback threshold, SHA-256 collision-safe storage, idempotent re-uploads.
+  - `claims/`: Canonical schema (`amount`, `token`, `recipient`, `purpose`, `assumptions`), deterministic text grounding against extracted pages, Decimal-based monetary normalization, cross-source conflict detection.
+  - `llm/`: Protocol-based provider interface, SQLite cache keyed by `SHA256(prompt:input:model)`, single retry on invalid output, closed failure with `LLM_UNAVAILABLE`, and audit logging.
+  - `api/routes.py`:
+    - `POST /sources`: Ingests PDF or text sources.
+    - `POST /analyze/{pid}`: Runs extraction, grounding, and conflict detection.
+    - `GET /claims/{pid}`: Fetches claims and unresolved conflicts.
+    - `GET /audit/{pid}`: Fetches immutable audit trail.
 - **Test validation results:**
-  - `forge test -vv`: 22 passed across 3 suites (19 unit/revert tests in `Stage1Core.t.sol`).
-  - `uv run pytest`: 6 passed across 3 suites (`test_attest.py`, `test_health.py`, `test_interop.py`).
-  - Cross-language interop test: Python computes action hash, signs EIP-712 attestation, and executes successfully on live Anvil chain.
+  - `cd contracts && forge test -vv`: 24 passed across 3 suites.
+  - `cd backend && uv run pytest`: 30 passed across 8 test suites.
+  - `cd frontend && npm run build && npm run lint`: 0 warnings, 0 errors.
 
-## Planned architecture and limits
+## Environment variables
+
+Configured in root `.env` (template in `.env.example`):
+
+```text
+RPC_URL=http://127.0.0.1:8545
+DATABASE_PATH=data/dao_accountability.db
+LLM_MODE=online
+LLM_ONLINE_PROVIDER=gemini
+LLM_API_KEY=
+LLM_TIMEOUT_S=30
+LLM_CACHE=on
+```
 
 React UI → FastAPI/Python → SQLite and a local EVM chain (Foundry/Anvil).
 Later stages will bind proposal text/evidence to one-action manifests, a registry,

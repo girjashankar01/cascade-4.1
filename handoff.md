@@ -1,56 +1,60 @@
-# Stage 1 handoff
+# Stage 2 handoff
 
-Updated 2026-10-25. **Stage 1 complete.** Core smart contracts, Python EIP-712 attestation signing, and end-to-end Python-to-Solidity interoperability are verified.
+Updated 2026-10-25. **Stage 2 complete.** Evidence ingestion, canonical claim extraction, deterministic text grounding, numeric cross-checks, cross-source conflict detection, LLM routing with SQLite caching and audit trails, and all Stage 2 FastAPI endpoints are verified.
+
+## Pre-implementation verification findings (Stage 1)
+
+1. `Treasury.setExecutor`: Verified deployer-restricted (`msg.sender == deployer`) and single-use (`executor == address(0)`), permanently locked thereafter.
+2. `GovernanceRegistry` version commits: Identified that `commitVersion` previously retained prior approvals across revisions. Fixed by invalidating `_approved[pid]` upon new version commits, fulfilling Section 9 testing criteria ("A text revision with an identical action invalidates the old approval"). Verified with regression test `test_TextRevision_InvalidatesPriorApproval`.
+3. `MockToken.mint`: Added deployer-only access control (`require(msg.sender == deployer, "only deployer")`), verified with regression test `test_Revert_MockTokenMint_Unauthorized`.
+4. Artifact loading: Verified `test_interop.py` compiles and loads live Foundry artifacts from `contracts/out/` directly, with zero hardcoded bytecode.
+5. ActionHash: Independently verified Python and Solidity compute identical action hash `0x67ace4504a92394fd5e07872975fa56b94ce9583abb97c64adb24df2b4c36995` for test input.
 
 ## Implemented files and functionality
 
-- `contracts/src/MockToken.sol`: OpenZeppelin ERC-20 with 6 decimals mimicking USDC with initial minting to deployer.
-- `contracts/src/GovernanceRegistry.sol`: Sequential 1-indexed proposal version commitments, proposer ownership, zero/duplicate hash rejection, and governance-only approval of latest versions.
-- `contracts/src/Treasury.sol`: Holds ETH and ERC-20 tokens; `exec` is callable strictly by the authorized executor; one-time atomic executor configuration by deployer.
-- `contracts/src/GuardedExecutor.sol`: EIP-712 typed data verification (`GuardedExecutor`, `v1`), `VERIFIED = 1` enforcement, single-use proposal execution (`executed[pid]`), actionHash validation, verifier signature recovery, and CEI execution via Treasury.
-- `contracts/test/Stage1Core.t.sol`: 19 comprehensive Foundry unit and revert tests covering valid payouts, action mismatches, expired deadlines, invalid signatures, non-VERIFIED verdicts, replay protection, access controls, zero hashes, and downstream revert rollbacks.
-- `backend/app/chain/__init__.py`, `attest.py`: Core action-hash computation (`keccak256(abi.encode(target, value, keccak256(calldata)))`) and EIP-712 typed data signing using `eth-account` and `web3.py`.
-- `backend/tests/test_attest.py`: Unit tests for action hash computation, typed data construction, and signature recovery.
-- `backend/tests/test_interop.py`: End-to-end automated integration test deploying contracts to an ephemeral Anvil node, computing hashes and signing attestations in Python, and executing successfully through `GuardedExecutor` on-chain.
+- `backend/app/db.py`: SQLite initialization with `sources`, `claims`, `conflicts`, `analyses`, and `llm_cache` tables; context manager with Row factory and PRAGMA foreign keys.
+- `backend/app/ingestion/ocr.py`: RapidOCR fallback execution with pluggable mock handler `_OCR_MOCK_HANDLER` to avoid external ONNX model downloads during test runs.
+- `backend/app/ingestion/pdf.py`: PyMuPDF native digital text extraction with 1-indexed pages; 50-character usable text threshold triggering OCR fallback; SHA-256 collision-safe storage under `data/sources/`; idempotent ingestion.
+- `backend/app/claims/schema.py`: Pydantic models for canonical fields (`amount`, `token`, `recipient`, `purpose`, `assumptions`), strict validation on confidence (0.0–1.0) and page (>=1), statuses `GROUNDED`, `UNCERTAIN`, `REJECTED`, and `Conflict` model.
+- `backend/app/claims/ground.py`: Normalization for whitespace, lowercase, and Unicode dash variants; exact substring check against source page; `Decimal`-based monetary normalization equating `$5.0M` and `5,000,000` as integer strings; quote numeric cross-checks.
+- `backend/app/claims/conflicts.py`: Deterministic cross-source contradiction detection; surfaces `$5.0M` vs `$5.8M` discrepancy with both quotes and page references; marks affected claims `UNCERTAIN`.
+- `backend/app/llm/base.py`: `LLMProvider` protocol and `LLMUnavailableError` (code `LLM_UNAVAILABLE`).
+- `backend/app/llm/cache.py`: SQLite cache keyed by `SHA256(prompt_hash:input_hash:model)`.
+- `backend/app/llm/online.py`: Hosted provider implementation with system prompt, markdown JSON block extraction, and timeout handling.
+- `backend/app/llm/router.py`: Caching router with single retry on invalid JSON/schema, closed failure with `LLM_UNAVAILABLE`, and audit trail logging in `analyses` table.
+- `backend/app/api/routes.py`:
+  - `POST /sources`: accepts PDF upload or plain text with SHA-256 deduplication.
+  - `POST /analyze/{pid}`: runs extraction, grounding, and conflict detection.
+  - `GET /claims/{pid}`: returns persisted claims, validation details, and conflicts.
+  - `GET /audit/{pid}`: returns audit trail.
+- `backend/app/main.py`: lifespan database initialization and router registration.
+- `fixtures/`: `proposal.pdf` ($5.0M, 5,000,000 USDC to 0x9965507D1a55BCC6475675304Ca994970De97744), `forum_post.txt` ($5.8M conflicting discussion), `expected_claims.json` (deterministic test oracle).
 
 ## Executed commands and outcomes
 
-| Command | Working Directory | Outcome | Details |
+| Command | Directory | Outcome | Details |
 | --- | --- | --- | --- |
-| `forge build` | `contracts/` | PASS | 44 files compiled with Solc 0.8.30 |
-| `forge test -vv` | `contracts/` | PASS | 22 passed across 3 suites (19 in `Stage1Core.t.sol`, 2 in `Counter.t.sol`, 1 in `Dependency.t.sol`) |
-| `uv run pytest` | `backend/` | PASS | 6 passed (4 in `test_attest.py`, 1 in `test_health.py`, 1 in `test_interop.py`) |
-| `npm run build` | `frontend/` | PASS | Production bundle generated with zero errors |
+| `uv run pytest` | `backend/` | PASS | 30 tests passed in 2.49s across 8 test suites |
+| `forge test -vv` | `contracts/` | PASS | 24 tests passed across 3 test suites |
+| `npm run build` | `frontend/` | PASS | Vite production build succeeded in 67ms |
 | `npm run lint` | `frontend/` | PASS | Oxlint passed with 0 errors and 0 warnings |
 
-## Cross-language interoperability outcome
+## Exit gate checklist
 
-1. **ActionHash Equality:**
-   - Vector: `target = 0x1111111111111111111111111111111111111111`, `value = 100`, `data = "hello world"`.
-   - Result: Python and Solidity independently compute `0x67ace4504a92394fd5e07872975fa56b94ce9583abb97c64adb24df2b4c36995` (exact match).
-2. **On-Chain EIP-712 Execution:**
-   - In `test_interop.py`, contracts are deployed to Anvil.
-   - Payout of 50,000 USDC is prepared.
-   - Python signs EIP-712 attestation with Anvil Account 3 verifier key.
-   - `GuardedExecutor.execute` is called with Python signature and calldata.
-   - On-chain transaction succeeds (`receipt.status == 1`); recipient balance increases by 50,000 USDC.
-   - Replay execution reverts on-chain with `"already executed"`.
-   - Substituted attacker recipient reverts on-chain with `"action mismatch"`.
-   - Signature from non-verifier key reverts on-chain with `"bad attestation"`.
+- [x] Grounding rejects fabricated quotes without accepting paraphrases.
+- [x] Numeric normalization equates `$5.0M` and `5,000,000` under same unit and rejects genuine mismatches.
+- [x] Discrepancy between `$5.0M` and `$5.8M` surfaced with both quotes and source references.
+- [x] Low-confidence claims (< 0.8), OCR-derived claims, and unresolved conflicts remain `UNCERTAIN`.
+- [x] SQLite tables (`sources`, `claims`, `conflicts`, `analyses`, `llm_cache`) implemented.
+- [x] All four Stage 2 routes registered, functional, and covered by end-to-end tests.
+- [x] Stage 1 regression tests pass.
+- [x] Documentation and handoff updated.
 
-## Acceptance gate checklist
+## Next steps (Stage 3: Manifest Construction, Commitment, and Approval)
 
-- [x] Four contracts implemented according to specifications in `contracts/src/`.
-- [x] All 22 Foundry unit and revert tests pass.
-- [x] Python and Solidity compute identical action hashes.
-- [x] Python-signed EIP-712 attestation verifies and executes on-chain via Solidity `GuardedExecutor`.
-- [x] Technical decisions recorded in `decisions.md`.
-- [x] Workspace and handoff status updated.
-
-## Next steps (Stage 2: Evidence and Claims)
-
-1. Implement document ingestion in `backend/app/ingestion/` (PyMuPDF for text extraction with page numbers, RapidOCR fallback).
-2. Define Pydantic claims schema in `backend/app/claims/schema.py` (`field`, `value`, `quote`, `source_id`, `page`, `confidence`).
-3. Implement text grounding validation and numeric cross-checks.
-4. Implement deterministic cross-source conflict detection.
-5. Create test fixtures (`proposal.pdf`, `forum_post.txt`).
+1. Implement `canon.py` for deterministic JSON canonicalization (sorted keys, no spaces, UTF-8, integer strings).
+2. Implement manifest builder drafting action envelope (`erc20_payout`) from confirmed claims.
+3. Compute `proposalTextHash`, `evidenceRoot`, `versionHash`, and `actionHash`.
+4. Implement `POST /manifest/{pid}` and `POST /manifest/{pid}/confirm`.
+5. Implement on-chain commitment (`POST /commit/{pid}`) and governance approval (`POST /approve/{pid}`).
+6. Add tamper tests (one-byte change to evidence or manifest invalidates versionHash).
