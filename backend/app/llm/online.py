@@ -57,8 +57,9 @@ class OnlineLLMProvider(LLMProvider):
         timeout_s: float = 30.0,
     ):
         self.api_key = api_key or os.getenv("LLM_API_KEY", "")
-        self.provider = provider or os.getenv("LLM_ONLINE_PROVIDER", "gemini")
-        self.model = model or os.getenv("LLM_MODEL", "gemini-2.5-flash")
+        self.provider = (provider or os.getenv("LLM_ONLINE_PROVIDER", "openai")).lower()
+        default_model = "gpt-4o-mini" if self.provider == "openai" else "gemini-2.5-flash"
+        self.model = model or os.getenv("LLM_MODEL", default_model)
         self.timeout_s = float(os.getenv("LLM_TIMEOUT_S", str(timeout_s)))
         self.name = f"online-{self.provider}"
 
@@ -81,7 +82,12 @@ class OnlineLLMProvider(LLMProvider):
         user_content = f"SOURCES:\n{json.dumps(sources_payload, indent=2)}\n\nINSTRUCTIONS:\n{prompt}"
 
         # Standard OpenAI / OpenRouter / compatible endpoint call
-        endpoint = os.getenv("LLM_API_ENDPOINT", "https://api.openai.com/v1/chat/completions")
+        default_endpoint = (
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+            if self.provider == "gemini"
+            else "https://api.openai.com/v1/chat/completions"
+        )
+        endpoint = os.getenv("LLM_API_ENDPOINT", default_endpoint)
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
