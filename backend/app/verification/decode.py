@@ -46,6 +46,7 @@ class DecodedTransaction:
         return {
             "target": self.target,
             "value": self.value,
+            "calldata": f"0x{self.raw_data.hex()}" if self.raw_data else "",
             "selector": self.selector,
             "method_name": self.method_name,
             "is_supported": self.is_supported,
@@ -350,3 +351,8 @@ def decode_transaction(
         diff=diff,
         matches_manifest=matches_manifest,
     )
+
+
+# Backward-compatibility alias
+decode_calldata = decode_transaction
+

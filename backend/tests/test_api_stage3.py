@@ -55,20 +55,14 @@ class MockCleanLLMProvider(LLMProvider):
 
 
 @pytest.fixture
-def client(tmp_path: Path):
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db_file = tmp_path / "test_api_stage3.db"
-    db_path = str(db_file)
-    init_db(db_path)
-
-    # Monkeypatch db_path in get_db_connection default
-    import app.db as db_mod
-    orig_db_path = db_mod.DEFAULT_DB_PATH
-    db_mod.DEFAULT_DB_PATH = db_file
+    monkeypatch.setenv("DATABASE_PATH", str(db_file))
+    init_db(db_file)
 
     with TestClient(app) as test_client:
         yield test_client
 
-    db_mod.DEFAULT_DB_PATH = orig_db_path
     set_llm_router(None)
 
 

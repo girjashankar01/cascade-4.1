@@ -1082,8 +1082,8 @@ def get_verifications_for_proposal(pid: str) -> List[Dict[str, Any]]:
             target = row["target"] or ""
             value = int(row["value"] or 0)
             try:
-                from app.verification.decode import decode_calldata
-                decoded_tx = decode_calldata(target, value, calldata).to_dict()
+                from app.verification.decode import decode_transaction
+                decoded_tx = decode_transaction(target=target, value=value, data=calldata).to_dict()
             except Exception:
                 decoded_tx = {
                     "target": target,
@@ -1139,6 +1139,70 @@ def get_deployments_endpoint() -> Dict[str, Any]:
         "verifier": Account.from_key(PK_VERIFIER).address,
         "proposer": Account.from_key(PK_PROPOSER).address,
     }
+
+
+@router.get("/balances", response_model=Dict[str, Any])
+def get_live_balances_endpoint(
+    rpc_url: Optional[str] = None,
+    recipient: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Query live on-chain balances for Treasury, Recipient, and Attacker."""
+    from app.scenarios.runner import load_saved_deployments, RECIPIENT_ADDR, ATTACKER_ADDR
+    from app.chain.client import get_web3, load_artifact
+    w3 = get_web3(rpc_url)
+    deployments = load_saved_deployments() or {}
+    token_addr = deployments.get("token")
+    treasury_addr = deployments.get("treasury")
+    recip_addr = recipient or RECIPIENT_ADDR
+    attacker_addr = ATTACKER_ADDR
+
+    result: Dict[str, Any] = {
+        "connected": w3.is_connected(),
+        "token_address": token_addr,
+        "treasury": {"address": treasury_addr, "token_balance": 0, "token_balance_raw": "0"},
+        "recipient": {"address": recip_addr, "token_balance": 0, "token_balance_raw": "0"},
+        "attacker": {"address": attacker_addr, "token_balance": 0, "token_balance_raw": "0"},
+    }
+
+    if not w3.is_connected() or not token_addr:
+        return result
+
+    try:
+        token_artifact = load_artifact("MockToken")
+        token_contract = w3.eth.contract(address=Web3.to_checksum_address(token_addr), abi=token_artifact["abi"])
+        decimals = 6
+        try:
+            decimals = token_contract.functions.decimals().call()
+        except Exception:
+            pass
+
+        if treasury_addr:
+            t_raw = token_contract.functions.balanceOf(Web3.to_checksum_address(treasury_addr)).call()
+            result["treasury"] = {
+                "address": treasury_addr,
+                "token_balance_raw": str(t_raw),
+                "token_balance": t_raw / (10**decimals),
+            }
+
+        if recip_addr:
+            r_raw = token_contract.functions.balanceOf(Web3.to_checksum_address(recip_addr)).call()
+            result["recipient"] = {
+                "address": recip_addr,
+                "token_balance_raw": str(r_raw),
+                "token_balance": r_raw / (10**decimals),
+            }
+
+        if attacker_addr:
+            a_raw = token_contract.functions.balanceOf(Web3.to_checksum_address(attacker_addr)).call()
+            result["attacker"] = {
+                "address": attacker_addr,
+                "token_balance_raw": str(a_raw),
+                "token_balance": a_raw / (10**decimals),
+            }
+    except Exception as e:
+        logger.warning(f"Failed to query live balances: {e}")
+
+    return result
 
 
 @router.post("/scenarios/{name}/run")
