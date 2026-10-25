@@ -6,17 +6,25 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, Optional
 
-DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "dao_accountability.db"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_DB_PATH = REPO_ROOT / "data" / "dao_accountability.db"
 _ORIGINAL_DEFAULT_DB_PATH = DEFAULT_DB_PATH
 
 
 def get_db_path() -> Path:
-    """Return database file path from environment or default project location."""
+    """Return database file path from environment or default project location.
+
+    Relative paths in DATABASE_PATH are anchored to the repository root directory
+    to ensure consistent database resolution regardless of the process working directory.
+    """
     if DEFAULT_DB_PATH != _ORIGINAL_DEFAULT_DB_PATH:
         return DEFAULT_DB_PATH
     env_path = os.getenv("DATABASE_PATH")
     if env_path:
-        return Path(env_path).resolve()
+        p = Path(env_path)
+        if p.is_absolute():
+            return p
+        return (REPO_ROOT / p).resolve()
     return DEFAULT_DB_PATH
 
 

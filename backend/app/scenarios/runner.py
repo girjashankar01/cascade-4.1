@@ -104,9 +104,9 @@ def ensure_deployments(
         except Exception:
             pass
 
-    # Redeploy and seed
+    # Redeploy and seed (only persist manifest if running against default chain, not test instance)
     logger.info("Deploying fresh contracts and seeding clean state...")
-    return deploy_and_seed(w3=w3, rpc_url=rpc_url, db_path=db_path)
+    return deploy_and_seed(w3=w3, rpc_url=rpc_url, db_path=db_path, save_deployments=(rpc_url is None))
 
 
 def run_scenario_a(
@@ -464,6 +464,7 @@ def run_scenario_b1(
         "steps": steps,
         "verification_report": report.to_dict(),
         "diff": report.diff,
+        "deployments": deployments,
         "execution_result": None,
         "revert_details": revert_message,
         "defense_layers": {
@@ -513,7 +514,7 @@ def run_scenario_c(
         sys.path.insert(0, str(scripts_dir))
     from deploy_and_seed import deploy_and_seed
 
-    deployments = deploy_and_seed(w3=w3, rpc_url=rpc_url, db_path=db_path)
+    deployments = deploy_and_seed(w3=w3, rpc_url=rpc_url, db_path=db_path, save_deployments=(rpc_url is None))
 
     steps.append(
         {
@@ -775,6 +776,7 @@ def run_scenario_b3(
         "steps": steps,
         "verification_report": report.to_dict(),
         "diff": report.diff,
+        "deployments": deployments,
         "execution_result": None,
         "revert_details": revert_message,
         "defense_layers": {
