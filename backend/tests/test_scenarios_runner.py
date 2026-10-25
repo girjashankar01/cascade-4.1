@@ -292,3 +292,76 @@ def test_health_endpoint_live_chain_status(client_env):
     assert "rpc_connected" in data
     assert "chain_id" in data
     assert "block_number" in data
+
+
+def test_scenario_b3_evil_upgrade_blocked(client_env):
+    """Test POST /scenarios/B3/run detects undeclared sweep() selector and blocks UUPS upgrade."""
+    client = client_env["client"]
+    rpc_url = client_env["rpc_url"]
+
+    client.post("/scenarios/C/run", json={"rpc_url": rpc_url})
+
+    resp = client.post("/scenarios/B3/run", json={"rpc_url": rpc_url})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["scenario"] == "B3"
+    assert data["success"] is True
+    assert data["blocked_as_expected"] is True
+    assert data["verdict"] == "MISMATCH"
+    assert data["verification_report"]["attestation_sig"] is None
+    assert data["slot_verified"]["slot_protected"] is True
+
+    # Rule R7 must be the failing rule
+    rules = data["verification_report"]["rules"]
+    r7 = next(r for r in rules if r["rule_id"] == "R7")
+    assert r7["status"] == "FAIL"
+    assert "0x35faa416" in r7["evidence"]["undeclared_selectors"]
+
+
+def test_scenario_b2_benign_upgrade_executed(client_env):
+    """Test POST /scenarios/B2/run verifies and executes benign V2 UUPS upgrade."""
+    client = client_env["client"]
+    rpc_url = client_env["rpc_url"]
+
+    client.post("/scenarios/C/run", json={"rpc_url": rpc_url})
+
+    resp = client.post("/scenarios/B2/run", json={"rpc_url": rpc_url})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["scenario"] == "B2"
+    assert data["success"] is True
+    assert data["verdict"] == "VERIFIED"
+    assert data["verification_report"]["attestation_sig"] is not None
+    assert data["slot_verified"]["version"] == "2.0.0"
+
+
+def test_coi_endpoint(client_env):
+    """Test GET /proposals/{pid}/coi returns wallet provenance and conflict-of-interest analysis."""
+    client = client_env["client"]
+    resp = client.get("/proposals/PROP-002/coi")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["proposal_id"] == "PROP-002"
+    assert data["has_linkage"] is True
+    assert len(data["shortest_path"]) >= 2
+    assert len(data["nodes"]) >= 3
+    assert len(data["edges"]) >= 2
+    assert len(data["undisclosed_connections"]) >= 1
+
+
+def test_prop001_conflict_detection(client_env):
+    """Test that Scenario C seeds PROP-001 with genuine conflicting sources ($5.0M vs $5.8M)."""
+    client = client_env["client"]
+    rpc_url = client_env["rpc_url"]
+
+    client.post("/scenarios/C/run", json={"rpc_url": rpc_url})
+
+    resp = client.get("/claims/PROP-001")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["conflicts"]) >= 1
+    cnf = data["conflicts"][0]
+    assert cnf["field"] == "amount"
+    assert cnf["display_value_a"] == "$5.0M"
+    assert cnf["display_value_b"] == "$5.8M"
+    assert cnf["status"] == "CONFLICT"

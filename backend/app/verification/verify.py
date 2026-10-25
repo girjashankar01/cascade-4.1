@@ -3,9 +3,10 @@
 from dataclasses import asdict, dataclass
 import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from eth_account import Account
+from eth_utils import keccak, to_checksum_address
 from web3 import Web3
 
 from app.chain.attest import (
@@ -76,12 +77,37 @@ class VerificationReport:
         }
 
 
+def scan_bytecode(code: bytes) -> Tuple[Set[str], Set[str]]:
+    """Scan EVM runtime code for candidate function selectors and control opcodes."""
+    i, ops, sels = 0, set(), set()
+    while i < len(code):
+        op = code[i]
+        if 0x60 <= op <= 0x7F:  # PUSH1..PUSH32
+            n = op - 0x5F
+            if n == 4 and i + 5 <= len(code):
+                sels.add("0x" + code[i + 1 : i + 5].hex().lower())
+            i += 1 + n
+        else:
+            ops.add(op)
+            i += 1
+    names = {
+        "DELEGATECALL": 0xF4,
+        "CALLCODE": 0xF2,
+        "SELFDESTRUCT": 0xFF,
+        "CREATE": 0xF0,
+        "CREATE2": 0xF5,
+    }
+    found_ops = {name for name, byte_val in names.items() if byte_val in ops}
+    return found_ops, sels
+
+
 def evaluate_rules(
     proposal_id: str,
     manifest: Dict[str, Any],
     onchain_approved_tuple: Tuple[str, str, str],
     decoded_tx: DecodedTransaction,
     sim_result: Dict[str, Any],
+    w3: Optional[Web3] = None,
 ) -> Tuple[str, List[RuleOutcome]]:
     """Evaluate deterministic rules R1, R2, R3, R4, R5, R6, R7, R9 in strict order."""
     rules: List[RuleOutcome] = []
@@ -238,13 +264,44 @@ def evaluate_rules(
     # ----------------------------------------------------
     allow_impl_change = envelope.get("allowImplChange", False)
     slot_changes = sim_result.get("slot_changes", {})
-    r6_pass = allow_impl_change or len(slot_changes) == 0
+    action = manifest.get("action", {})
+    kind = action.get("kind", "erc20_payout")
+
+    if kind == "proxy_upgrade":
+        expected_proxy = (action.get("proxy") or "").lower()
+        expected_impl = (action.get("newImpl") or "").lower()
+
+        if not allow_impl_change:
+            r6_pass = False
+            r6_expl = "Implementation change not permitted by envelope policy (allowImplChange is False)."
+        elif len(slot_changes) == 0:
+            r6_pass = False
+            r6_expl = "Implementation slot did not update to new implementation during simulation."
+        else:
+            invalid_changes = []
+            for addr, change in slot_changes.items():
+                if addr.lower() != expected_proxy:
+                    invalid_changes.append(f"Unexpected contract {addr} slot changed")
+                else:
+                    after_slot = change.get("after", "")
+                    after_addr = "0x" + after_slot[-40:].lower()
+                    if after_addr != expected_impl:
+                        invalid_changes.append(f"Slot implementation {after_addr} != expected {expected_impl}")
+            if invalid_changes:
+                r6_pass = False
+                r6_expl = f"Unauthorized implementation slot change: {'; '.join(invalid_changes)}"
+            else:
+                r6_pass = True
+                r6_expl = f"EIP-1967 implementation slot correctly updated to approved implementation ({expected_impl})."
+    else:
+        r6_pass = allow_impl_change or len(slot_changes) == 0
+        r6_expl = (
+            "EIP-1967 implementation storage slots remained unchanged."
+            if r6_pass
+            else f"Unauthorized implementation slot changes detected: {slot_changes}"
+        )
+
     r6_status = "PASS" if r6_pass else "FAIL"
-    r6_expl = (
-        "EIP-1967 implementation storage slots remained unchanged."
-        if r6_pass
-        else f"Unauthorized implementation slot changes detected: {slot_changes}"
-    )
     rules.append(
         RuleOutcome(
             rule_id="R6",
@@ -258,18 +315,86 @@ def evaluate_rules(
     # ----------------------------------------------------
     # Rule R7: Undeclared selector (upgrade scenario)
     # ----------------------------------------------------
-    # In payout scenario, selector is transfer; passes by default
-    r7_pass = decoded_tx.is_supported and decoded_tx.selector != "0x4f1ef286"
-    r7_status = "PASS" if r7_pass else "FAIL"
-    rules.append(
-        RuleOutcome(
-            rule_id="R7",
-            name="Selector Whitelist / Scope",
-            status=r7_status,
-            explanation="Selector is within approved scope." if r7_pass else "Undeclared or disallowed selector.",
-            evidence={"selector": decoded_tx.selector, "is_supported": decoded_tx.is_supported},
+    if kind == "proxy_upgrade":
+        new_impl_addr = (action.get("newImpl") or "").lower()
+        declared_selectors = {
+            (s if s.startswith("0x") else f"0x{s}").lower()
+            for s in action.get("declaredSelectors", [])
+        }
+        expected_code_hash = action.get("expectedImplCodeHash")
+
+        active_w3 = w3 if w3 is not None else get_web3()
+        code_bytes = b""
+        if new_impl_addr:
+            try:
+                code_bytes = bytes(active_w3.eth.get_code(to_checksum_address(new_impl_addr)))
+            except Exception:
+                code_bytes = b""
+
+        actual_code_hash = "0x" + keccak(code_bytes).hex().lower() if code_bytes else ""
+        code_hash_match = True
+        if expected_code_hash and actual_code_hash.lower() != expected_code_hash.lower():
+            code_hash_match = False
+
+        candidate_ops, candidate_sels = scan_bytecode(code_bytes)
+
+        # Baseline selectors from previous proxy implementation
+        proxy_addr = (action.get("proxy") or "").lower()
+        baseline_code_bytes = b""
+        if proxy_addr:
+            try:
+                from app.verification.simulate import EIP1967_IMPL_SLOT
+                base_slot = active_w3.eth.get_storage_at(to_checksum_address(proxy_addr), EIP1967_IMPL_SLOT)
+                base_impl_addr = "0x" + base_slot[-20:].hex().lower()
+                if int(base_impl_addr, 16) != 0:
+                    baseline_code_bytes = bytes(active_w3.eth.get_code(to_checksum_address(base_impl_addr)))
+            except Exception:
+                baseline_code_bytes = b""
+
+        baseline_ops, baseline_sels = scan_bytecode(baseline_code_bytes)
+
+        whitelist = baseline_sels | declared_selectors
+        undeclared_sels = candidate_sels - whitelist
+        new_ops = candidate_ops - baseline_ops
+
+        if not code_hash_match:
+            r7_pass = False
+            r7_expl = f"Implementation bytecode hash mismatch: expected {expected_code_hash}, got {actual_code_hash}"
+        elif len(undeclared_sels) > 0:
+            r7_pass = False
+            r7_expl = f"Undeclared selector candidates detected in implementation bytecode: {sorted(list(undeclared_sels))}"
+        else:
+            r7_pass = True
+            r7_expl = "All candidate selectors in new implementation are within approved scope (baseline ∪ declared)."
+
+        r7_status = "PASS" if r7_pass else "FAIL"
+        rules.append(
+            RuleOutcome(
+                rule_id="R7",
+                name="Selector Whitelist / Scope",
+                status=r7_status,
+                explanation=r7_expl,
+                evidence={
+                    "undeclared_selectors": sorted(list(undeclared_sels)),
+                    "declared_selectors": sorted(list(declared_selectors)),
+                    "candidate_selectors_count": len(candidate_sels),
+                    "new_opcodes_relative_to_baseline": sorted(list(new_ops)),
+                    "code_hash": actual_code_hash,
+                },
+            )
         )
-    )
+    else:
+        r7_pass = decoded_tx.is_supported and decoded_tx.selector != "0x4f1ef286"
+        r7_status = "PASS" if r7_pass else "FAIL"
+        rules.append(
+            RuleOutcome(
+                rule_id="R7",
+                name="Selector Whitelist / Scope",
+                status=r7_status,
+                explanation="Selector is within approved scope." if r7_pass else "Undeclared or disallowed selector.",
+                evidence={"selector": decoded_tx.selector, "is_supported": decoded_tx.is_supported},
+            )
+        )
 
     # ----------------------------------------------------
     # Rule R9: Contract owner / role changes
@@ -408,6 +533,7 @@ def verify_proposal_transaction(
         onchain_approved_tuple=onchain_tuple,
         decoded_tx=decoded_tx,
         sim_result=sim_result,
+        w3=w3,
     )
 
     all_passed = verdict == VERDICT_VERIFIED

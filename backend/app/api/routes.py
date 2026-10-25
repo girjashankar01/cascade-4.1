@@ -391,11 +391,27 @@ def get_claims_for_proposal(pid: str) -> Dict[str, Any]:
                 }
             )
 
+        cursor.execute(
+            "SELECT cache_status FROM analyses WHERE proposal_id = ? ORDER BY created_at DESC LIMIT 1",
+            (pid,),
+        )
+        latest_analysis = cursor.fetchone()
+        cache_status = latest_analysis["cache_status"] if latest_analysis else "generated"
+
     return {
         "proposal_id": pid,
         "claims": claims,
         "conflicts": conflicts,
+        "cache_status": cache_status,
     }
+
+
+@router.get("/proposals/{pid}/coi", response_model=Dict[str, Any])
+def get_proposal_coi_endpoint(pid: str) -> Dict[str, Any]:
+    """Return Conflict-of-Interest (COI) wallet provenance and linkage graph analysis."""
+    from app.claims.coi import get_proposal_coi_analysis
+    report = get_proposal_coi_analysis(proposal_id=pid)
+    return report.to_dict()
 
 
 @router.get("/audit/{pid}", response_model=List[Dict[str, Any]])
@@ -1057,6 +1073,23 @@ def get_verifications_for_proposal(pid: str) -> List[Dict[str, Any]]:
             (pid,),
         )
         for row in cursor.fetchall():
+            calldata = row["calldata"] or ""
+            target = row["target"] or ""
+            value = int(row["value"] or 0)
+            try:
+                from app.verification.decode import decode_calldata
+                decoded_tx = decode_calldata(target, value, calldata).to_dict()
+            except Exception:
+                decoded_tx = {
+                    "target": target,
+                    "value": value,
+                    "selector": calldata[:10] if calldata else "",
+                    "recipient": None,
+                    "amount_raw": None,
+                    "action_hash": row["action_hash"],
+                    "calldata_hash": "",
+                    "is_supported": False,
+                }
             records.append(
                 {
                     "id": row["id"],
@@ -1070,6 +1103,7 @@ def get_verifications_for_proposal(pid: str) -> List[Dict[str, Any]]:
                     "rules": json.loads(row["rules_json"]) if row["rules_json"] else [],
                     "diff": json.loads(row["diff_json"]) if row["diff_json"] else {},
                     "simulation": json.loads(row["simulation_json"]) if row["simulation_json"] else {},
+                    "decoded_tx": decoded_tx,
                     "attestation_sig": row["attestation_sig"],
                     "deadline": row["deadline"],
                     "executed": bool(row["executed"]),

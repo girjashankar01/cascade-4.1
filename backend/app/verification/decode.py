@@ -143,16 +143,85 @@ def decode_transaction(
 
     # 5. Check supported selectors
     if selector == SELECTOR_UPGRADE_TO_AND_CALL:
+        kind = manifest.get("action", {}).get("kind") if manifest else None
+        if kind != "proxy_upgrade":
+            return DecodedTransaction(
+                target=target_clean.lower(),
+                value=value,
+                raw_data=raw_bytes,
+                selector=selector,
+                method_name="upgradeToAndCall(address,bytes)",
+                is_supported=False,
+                calldata_hash=calldata_hash,
+                action_hash=computed_action_hash,
+                decoding_error="upgradeToAndCall is unsupported for payout proposals",
+            )
+
+        if len(raw_bytes) < 36:
+            return DecodedTransaction(
+                target=target_clean.lower(),
+                value=value,
+                raw_data=raw_bytes,
+                selector=selector,
+                method_name="upgradeToAndCall(address,bytes)",
+                is_supported=False,
+                calldata_hash=calldata_hash,
+                action_hash=computed_action_hash,
+                decoding_error=f"Calldata too short for upgradeToAndCall: got {len(raw_bytes)} bytes",
+            )
+
+        word1 = raw_bytes[4:36]
+        if word1[:12] != b"\x00" * 12:
+            return DecodedTransaction(
+                target=target_clean.lower(),
+                value=value,
+                raw_data=raw_bytes,
+                selector=selector,
+                method_name="upgradeToAndCall(address,bytes)",
+                is_supported=False,
+                calldata_hash=calldata_hash,
+                action_hash=computed_action_hash,
+                decoding_error="Non-canonical address encoding for new implementation (upper 12 bytes must be 0x00)",
+            )
+
+        new_impl_address = "0x" + word1[12:32].hex().lower()
+        diff: Dict[str, Any] = {}
+        action = manifest.get("action", {})
+        expected_proxy = (action.get("proxy") or "").lower()
+        expected_impl = (action.get("newImpl") or "").lower()
+
+        diff["target"] = {
+            "match": target_clean.lower() == expected_proxy,
+            "approved": expected_proxy,
+            "submitted": target_clean.lower(),
+        }
+        diff["recipient"] = {
+            "match": new_impl_address.lower() == expected_impl,
+            "approved": expected_impl,
+            "submitted": new_impl_address.lower(),
+        }
+        diff["newImpl"] = diff["recipient"]
+        diff["value"] = {
+            "match": value == 0,
+            "approved": 0,
+            "submitted": value,
+        }
+
+        matches_manifest = all(item["match"] for item in diff.values())
+
         return DecodedTransaction(
             target=target_clean.lower(),
             value=value,
             raw_data=raw_bytes,
             selector=selector,
             method_name="upgradeToAndCall(address,bytes)",
-            is_supported=False,
+            is_supported=True,
+            recipient=new_impl_address,
             calldata_hash=calldata_hash,
             action_hash=computed_action_hash,
-            decoding_error="upgradeToAndCall is unsupported for payout proposals",
+            decoding_error=None,
+            diff=diff,
+            matches_manifest=matches_manifest,
         )
 
     if selector not in SUPPORTED_SELECTORS:

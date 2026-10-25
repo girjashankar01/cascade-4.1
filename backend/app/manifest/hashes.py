@@ -95,6 +95,23 @@ def encode_erc20_transfer_calldata(recipient: str, amount_raw: Union[int, str]) 
     return ERC20_TRANSFER_SELECTOR + recipient_bytes + amount_bytes
 
 
+def encode_upgrade_to_and_call_calldata(new_impl: str, data: bytes = b"") -> bytes:
+    """Encode standard UUPS upgradeToAndCall(address,bytes) calldata."""
+    clean_addr = new_impl.strip()
+    if clean_addr.startswith("0x") or clean_addr.startswith("0X"):
+        clean_addr = clean_addr[2:]
+    if len(clean_addr) != 40:
+        raise ValueError(f"Invalid Ethereum address length: {len(clean_addr)}")
+
+    selector = bytes.fromhex("4f1ef286")
+    addr_bytes = bytes.fromhex(clean_addr.rjust(64, "0"))
+    offset_bytes = (64).to_bytes(32, byteorder="big")
+    len_bytes = len(data).to_bytes(32, byteorder="big")
+    padding_len = (32 - (len(data) % 32)) % 32
+    padded_data = data + (b"\x00" * padding_len)
+    return selector + addr_bytes + offset_bytes + len_bytes + padded_data
+
+
 def compute_manifest_action_hash(action: Dict[str, Any]) -> str:
     """Compute actionHash from manifest action dictionary.
 
@@ -102,16 +119,24 @@ def compute_manifest_action_hash(action: Dict[str, Any]) -> str:
         actionHash = keccak256(abi.encode(target, value, keccak256(calldata)))
     """
     kind = action.get("kind")
-    if kind != "erc20_payout":
-        raise ValueError(f"Unsupported action kind for Stage 3: '{kind}'")
+    if kind == "erc20_payout":
+        token = action.get("token")
+        recipient = action.get("recipient")
+        amount_raw = action.get("amountRaw")
 
-    token = action.get("token")
-    recipient = action.get("recipient")
-    amount_raw = action.get("amountRaw")
+        if not token or not recipient or amount_raw is None:
+            raise ValueError("Missing required fields for erc20_payout action")
 
-    if not token or not recipient or amount_raw is None:
-        raise ValueError("Missing required fields for erc20_payout action")
-
-    calldata = encode_erc20_transfer_calldata(recipient=recipient, amount_raw=amount_raw)
-    ah = compute_action_hash(target=token, value=0, data=calldata)
-    return "0x" + ah.hex().lower()
+        calldata = encode_erc20_transfer_calldata(recipient=recipient, amount_raw=amount_raw)
+        ah = compute_action_hash(target=token, value=0, data=calldata)
+        return "0x" + ah.hex().lower()
+    elif kind == "proxy_upgrade":
+        proxy = action.get("proxy")
+        new_impl = action.get("newImpl")
+        if not proxy or not new_impl:
+            raise ValueError("Missing required fields (proxy, newImpl) for proxy_upgrade action")
+        calldata = encode_upgrade_to_and_call_calldata(new_impl=new_impl, data=b"")
+        ah = compute_action_hash(target=proxy, value=0, data=calldata)
+        return "0x" + ah.hex().lower()
+    else:
+        raise ValueError(f"Unsupported action kind: '{kind}'")
