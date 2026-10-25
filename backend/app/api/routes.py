@@ -31,11 +31,19 @@ from app.manifest.builder import (
 from app.chain.client import (
     PK_GOVERNANCE,
     PK_PROPOSER,
+    PK_VERIFIER,
     approve_version_onchain,
     commit_version_onchain,
     get_onchain_approved,
     get_onchain_version,
+    get_web3,
+    load_artifact,
+    proposal_id_to_bytes32,
 )
+from app.chain.attest import compute_action_hash, recover_attestation_signer, VERIFIED
+from app.verification.verify import verify_proposal_transaction, VERDICT_VERIFIED
+from eth_account import Account
+from web3 import Web3
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +116,38 @@ class VerifyVersionPayload(BaseModel):
     evidence_hashes: Optional[List[str]] = None
     registry_address: Optional[str] = None
     rpc_url: Optional[str] = None
+
+
+class VerifyPayload(BaseModel):
+    proposal_id: Optional[str] = None
+    target: str
+    value: Optional[int] = 0
+    data: str
+    registry_address: Optional[str] = None
+    treasury_address: Optional[str] = None
+    executor_address: Optional[str] = None
+    verifier_private_key: Optional[str] = None
+    ttl_seconds: Optional[int] = 3600
+    rpc_url: Optional[str] = None
+
+
+class ExecutePayload(BaseModel):
+    proposal_id: Optional[str] = None
+    target: str
+    value: Optional[int] = 0
+    data: str
+    verdict: Optional[int] = 1
+    deadline: Optional[int] = None
+    signature: Optional[str] = None
+    executor_address: Optional[str] = None
+    registry_address: Optional[str] = None
+    caller_private_key: Optional[str] = None
+    rpc_url: Optional[str] = None
+
+
+class ScenarioRunPayload(BaseModel):
+    rpc_url: Optional[str] = None
+    reset_first: Optional[bool] = False
 
 
 @router.post("/sources", status_code=status.HTTP_201_CREATED)
@@ -730,4 +770,358 @@ def verify_version(pid: str, payload: Optional[VerifyVersionPayload] = None) -> 
     except Exception as e:
         logger.error(f"Integrity check failed: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+
+
+@router.post("/verify")
+@router.post("/verify/{pid}")
+def verify_transaction_endpoint(
+    payload: VerifyPayload,
+    pid: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Run full verification pipeline: decode, simulate, evaluate deterministic rules, and attest."""
+    init_db()
+    proposal_id = pid or payload.proposal_id
+    if not proposal_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="proposal_id is required either in URL path or JSON payload",
+        )
+
+    if not payload.registry_address or not payload.treasury_address or not payload.executor_address:
+        # Require deployment addresses for live verification
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="registry_address, treasury_address, and executor_address are required for verification",
+        )
+
+    report = verify_proposal_transaction(
+        proposal_id=proposal_id,
+        target=payload.target,
+        value=payload.value or 0,
+        data=payload.data,
+        registry_address=payload.registry_address,
+        treasury_address=payload.treasury_address,
+        executor_address=payload.executor_address,
+        verifier_private_key=payload.verifier_private_key or PK_VERIFIER,
+        ttl_seconds=payload.ttl_seconds or 3600,
+        rpc_url=payload.rpc_url,
+    )
+
+    return report.to_dict()
+
+
+@router.post("/execute")
+@router.post("/execute/{pid}")
+def execute_proposal_endpoint(
+    payload: ExecutePayload,
+    pid: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Execute a verified proposal transaction through GuardedExecutor with strict TOCTOU checks."""
+    init_db()
+    proposal_id = pid or payload.proposal_id
+    if not proposal_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="proposal_id is required either in URL path or JSON payload",
+        )
+
+    if not payload.executor_address:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="executor_address is required for guarded execution",
+        )
+
+    w3 = get_web3(payload.rpc_url)
+    executor_cs = Web3.to_checksum_address(payload.executor_address)
+    executor_artifact = load_artifact("GuardedExecutor")
+    executor = w3.eth.contract(address=executor_cs, abi=executor_artifact["abi"])
+
+    # Resolve registry address from executor if not provided
+    registry_addr = payload.registry_address or executor.functions.registry().call()
+    registry_cs = Web3.to_checksum_address(registry_addr)
+    registry_artifact = load_artifact("GovernanceRegistry")
+    registry = w3.eth.contract(address=registry_cs, abi=registry_artifact["abi"])
+
+    pid_b32 = proposal_id_to_bytes32(proposal_id)
+
+    # ---------------------------------------------------------
+    # Mandatory TOCTOU Protection Immediately Before Broadcast
+    # ---------------------------------------------------------
+
+    # 1. Check replay state on GuardedExecutor
+    if executor.functions.executed(pid_b32).call():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Proposal '{proposal_id}' has already been executed on-chain (replay blocked)",
+        )
+
+    # 2. Check live governance approval tuple on GovernanceRegistry
+    app_vhash, app_ahash, app_eroot = registry.functions.approved(pid_b32).call()
+    if app_vhash == b"\x00" * 32 or app_vhash == "0x" + "00" * 32:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Proposal '{proposal_id}' has no live active approval on GovernanceRegistry",
+        )
+
+    # 3. Check submitted calldata matches approved actionHash
+    raw_data = bytes.fromhex(payload.data[2:] if payload.data.startswith("0x") else payload.data)
+    computed_ahash = compute_action_hash(payload.target, payload.value or 0, raw_data)
+    if computed_ahash != app_ahash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Submitted transaction does not match on-chain approved actionHash",
+        )
+
+    # 4. Resolve attestation signature and deadline
+    signature = payload.signature
+    deadline = payload.deadline
+
+    if not signature or deadline is None:
+        # Fetch latest VERIFIED record from database
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT attestation_sig, deadline FROM verifications
+                WHERE proposal_id = ? AND verdict = 'VERIFIED' AND executed = 0
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (proposal_id,),
+            )
+            v_row = cursor.fetchone()
+
+        if not v_row or not v_row["attestation_sig"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No VERIFIED attestation found for this proposal; cannot execute non-verified transaction",
+            )
+        signature = v_row["attestation_sig"]
+        deadline = v_row["deadline"]
+
+    # 5. Check deadline against current chain block timestamp
+    latest_block = w3.eth.get_block("latest")
+    if latest_block["timestamp"] > deadline:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Attestation has expired: current chain timestamp {latest_block['timestamp']} > deadline {deadline}",
+        )
+
+    # 6. Verify verifier signature
+    chain_id = w3.eth.chain_id
+    expected_verifier = executor.functions.verifier().call()
+    try:
+        recovered = recover_attestation_signer(
+            proposal_id=pid_b32,
+            version_hash=app_vhash,
+            action_hash=app_ahash,
+            evidence_root=app_eroot,
+            verdict=VERIFIED,
+            deadline=deadline,
+            chain_id=chain_id,
+            verifying_contract=executor.address,
+            signature=signature,
+        )
+        if recovered.lower() != expected_verifier.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Attestation signature recovered to {recovered}, expected verifier {expected_verifier}",
+            )
+    except Exception as sig_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid attestation signature: {sig_err}",
+        ) from sig_err
+
+    # ---------------------------------------------------------
+    # Broadcast through GuardedExecutor.execute(...)
+    # ---------------------------------------------------------
+    caller_pk = payload.caller_private_key or PK_PROPOSER
+    caller_account = Account.from_key(caller_pk)
+    sig_bytes = bytes.fromhex(signature[2:] if signature.startswith("0x") else signature)
+
+    try:
+        tx = executor.functions.execute(
+            pid_b32,
+            Web3.to_checksum_address(payload.target),
+            int(payload.value or 0),
+            raw_data,
+            VERIFIED,
+            int(deadline),
+            sig_bytes,
+        ).build_transaction(
+            {
+                "from": caller_account.address,
+                "nonce": w3.eth.get_transaction_count(caller_account.address),
+                "gas": 3_000_000,
+                "gasPrice": w3.eth.gas_price,
+            }
+        )
+        signed_tx = w3.eth.account.sign_transaction(tx, caller_pk)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=10)
+    except Exception as e:
+        logger.error(f"On-chain execution failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"GuardedExecutor.execute reverted: {e}",
+        ) from e
+
+    if receipt.status != 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Transaction mined with failure status 0",
+        )
+
+    # 7. Update database record
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            UPDATE verifications
+            SET executed = 1, tx_hash = ?, block_number = ?
+            WHERE proposal_id = ? AND verdict = 'VERIFIED'
+            """,
+            (receipt.transactionHash.hex(), receipt.blockNumber, proposal_id),
+        )
+
+    return {
+        "success": True,
+        "proposal_id": proposal_id,
+        "tx_hash": receipt.transactionHash.hex(),
+        "block_number": receipt.blockNumber,
+        "status": "EXECUTED",
+    }
+
+
+@router.get("/sources", response_model=List[Dict[str, Any]])
+def list_sources() -> List[Dict[str, Any]]:
+    """List all ingested evidence sources."""
+    init_db()
+    sources: List[Dict[str, Any]] = []
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, sha256, filename, content_type, storage_path, page_count, ocr_used, created_at "
+            "FROM sources ORDER BY created_at DESC"
+        )
+        for row in cursor.fetchall():
+            sources.append(
+                {
+                    "id": row["id"],
+                    "sha256": row["sha256"],
+                    "filename": row["filename"],
+                    "content_type": row["content_type"],
+                    "storage_path": row["storage_path"],
+                    "page_count": row["page_count"],
+                    "ocr_used": bool(row["ocr_used"]),
+                    "created_at": row["created_at"],
+                }
+            )
+    return sources
+
+
+@router.get("/sources/{source_id}", response_model=Dict[str, Any])
+def get_source_detail(source_id: str) -> Dict[str, Any]:
+    """Get single source metadata and extracted page texts."""
+    init_db()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM sources WHERE id = ?", (source_id,))
+        row = cursor.fetchone()
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Source with id '{source_id}' not found",
+        )
+    return {
+        "id": row["id"],
+        "sha256": row["sha256"],
+        "filename": row["filename"],
+        "content_type": row["content_type"],
+        "storage_path": row["storage_path"],
+        "page_count": row["page_count"],
+        "extracted_pages": json.loads(row["extracted_pages"]),
+        "ocr_used": bool(row["ocr_used"]),
+        "created_at": row["created_at"],
+    }
+
+
+@router.get("/verifications/{pid}", response_model=List[Dict[str, Any]])
+def get_verifications_for_proposal(pid: str) -> List[Dict[str, Any]]:
+    """Return all persisted verification attempts and simulation outcomes for a proposal."""
+    init_db()
+    records: List[Dict[str, Any]] = []
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM verifications WHERE proposal_id = ? ORDER BY created_at DESC",
+            (pid,),
+        )
+        for row in cursor.fetchall():
+            records.append(
+                {
+                    "id": row["id"],
+                    "proposal_id": row["proposal_id"],
+                    "version": row["version"],
+                    "target": row["target"],
+                    "value": row["value"],
+                    "calldata": row["calldata"],
+                    "action_hash": row["action_hash"],
+                    "verdict": row["verdict"],
+                    "rules": json.loads(row["rules_json"]),
+                    "diff": json.loads(row["diff_json"]),
+                    "simulation": json.loads(row["simulation_json"]),
+                    "attestation_sig": row["attestation_sig"],
+                    "deadline": row["deadline"],
+                    "executed": bool(row["executed"]),
+                    "tx_hash": row["tx_hash"],
+                    "block_number": row["block_number"],
+                    "created_at": row["created_at"],
+                }
+            )
+    return records
+
+
+@router.get("/deployments", response_model=Dict[str, Any])
+def get_deployments_endpoint() -> Dict[str, Any]:
+    """Return active deployed contract addresses and roles."""
+    from app.scenarios.runner import load_saved_deployments
+    saved = load_saved_deployments()
+    if saved:
+        return saved
+    from app.chain.client import PK_DEPLOYER, PK_GOVERNANCE, PK_PROPOSER, PK_VERIFIER, DEFAULT_RPC_URL
+    return {
+        "rpc_url": DEFAULT_RPC_URL,
+        "token": None,
+        "registry": None,
+        "treasury": None,
+        "executor": None,
+        "deployer": Account.from_key(PK_DEPLOYER).address,
+        "governance": Account.from_key(PK_GOVERNANCE).address,
+        "verifier": Account.from_key(PK_VERIFIER).address,
+        "proposer": Account.from_key(PK_PROPOSER).address,
+    }
+
+
+@router.post("/scenarios/{name}/run")
+def run_scenario_endpoint(
+    name: str,
+    payload: Optional[ScenarioRunPayload] = None,
+) -> Dict[str, Any]:
+    """Execute scenario A, B1, or C deterministically."""
+    from app.scenarios.runner import execute_scenario
+    rpc_url = payload.rpc_url if payload else None
+    try:
+        result = execute_scenario(name=name, rpc_url=rpc_url)
+        return result
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err),
+        ) from val_err
+    except Exception as e:
+        logger.error(f"Scenario execution failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Scenario {name} failed: {e}",
+        ) from e
 

@@ -161,5 +161,27 @@ def init_db(db_path: Optional[Path | str] = None) -> None:
             );
 
             CREATE INDEX IF NOT EXISTS idx_versions_pid_ver ON versions(proposal_id, version);
+
+            CREATE TABLE IF NOT EXISTS verifications (
+                id TEXT PRIMARY KEY,
+                proposal_id TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                target TEXT NOT NULL,
+                value TEXT NOT NULL,
+                calldata TEXT NOT NULL,
+                action_hash TEXT NOT NULL,
+                verdict TEXT NOT NULL,  -- VERIFIED, MISMATCH, UNSUPPORTED, UNCERTAIN
+                rules_json TEXT NOT NULL,  -- array of rule outcomes
+                diff_json TEXT NOT NULL,  -- field diffs
+                simulation_json TEXT NOT NULL,  -- simulation summary & state deltas
+                attestation_sig TEXT,
+                deadline INTEGER,
+                executed BOOLEAN NOT NULL DEFAULT 0,
+                tx_hash TEXT,
+                block_number INTEGER,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_verifications_pid ON verifications(proposal_id);
             """
         )
