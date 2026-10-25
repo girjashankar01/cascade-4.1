@@ -7,10 +7,13 @@ from pathlib import Path
 from typing import Generator, Optional
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "dao_accountability.db"
+_ORIGINAL_DEFAULT_DB_PATH = DEFAULT_DB_PATH
 
 
 def get_db_path() -> Path:
     """Return database file path from environment or default project location."""
+    if DEFAULT_DB_PATH != _ORIGINAL_DEFAULT_DB_PATH:
+        return DEFAULT_DB_PATH
     env_path = os.getenv("DATABASE_PATH")
     if env_path:
         return Path(env_path).resolve()
