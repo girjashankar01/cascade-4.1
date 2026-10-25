@@ -1,0 +1,199 @@
+{
+  "runningGuards": {
+    "modeDisabled": true,
+    "radioDisabled": true,
+    "resetDisabled": true,
+    "runDisabled": true,
+    "status": "Demo sequence: Read."
+  },
+  "scenarios": [
+    {
+      "balances": [
+        "1,000,000",
+        "0",
+        "0",
+        "1,000,000",
+        "0",
+        "0"
+      ],
+      "result": "Allowed\nThe payment matches the approved plan.\n\nStopped before any money moved: No\n\nThe approved plan\n\nPay the approved recipient 1,000,000 test USDC.\n\nRecipient\nApproved recipient\nAmount\n1,000,000 test USDC\nWhat was actually sent\n\nPay the approved recipient 1,000,000 test USDC.\n\nRecipient\nApproved recipient\nAmount\n1,000,000 test USDC",
+      "scenario": "A"
+    },
+    {
+      "balances": [
+        "0",
+        "1,000,000",
+        "1,000,000",
+        "0",
+        "0",
+        "0"
+      ],
+      "result": "Reset complete\nThe starting demo data has been restored. No payment was made.\n\nStopped before any money moved: Not applicable — this was a reset\n\nThe approved plan\n\nRestore the starting demo data. No payment is approved.\n\nWhat was actually sent\n\nRestore the starting demo data. No payment is approved.",
+      "scenario": "C"
+    },
+    {
+      "balances": [
+        "1,000,000",
+        "1,000,000",
+        "0",
+        "0",
+        "0",
+        "0"
+      ],
+      "result": "Blocked\nThe recipient and amount were changed.\n\nStopped before any money moved: Yes\n\nThe approved plan\n\nPay the approved recipient 1,000,000 test USDC.\n\nRecipient\nApproved recipient\nAmount\n1,000,000 test USDC\nWhat was actually sent\n\nDifferent from the approved plan\n\nPay the bad actor 2,000,000 test USDC.\n\nRecipient\nThe bad actor\nAmount\n2,000,000 test USDC",
+      "scenario": "B1"
+    },
+    {
+      "balances": [
+        "1,000,000",
+        "1,000,000",
+        "0",
+        "0",
+        "0",
+        "0"
+      ],
+      "result": "Blocked\nThe recipient and amount were changed.\n\nStopped before any money moved: Yes\n\nThis replay restored the starting demo balances before the check.\n\nThe approved plan\n\nPay the approved recipient 1,000,000 test USDC.\n\nRecipient\nApproved recipient\nAmount\n1,000,000 test USDC\nWhat was actually sent\n\nDifferent from the approved plan\n\nPay the bad actor 2,000,000 test USDC.\n\nRecipient\nThe bad actor\nAmount\n2,000,000 test USDC",
+      "scenario": "B1-repeat"
+    },
+    {
+      "balances": [
+        "1,000,000",
+        "1,000,000",
+        "0",
+        "0",
+        "0",
+        "0"
+      ],
+      "result": "Blocked\nThe update includes a change that was not declared.\n\nStopped before any money moved: Yes\n\nThis replay restored the starting demo balances before the check.\n\nThe approved plan\n\nA software update with only the changes described in the approved plan.\n\nWhat was actually sent\n\nDifferent from the approved plan\n\nA software update with an undeclared way to take funds.\n\nThis example checks a software upgrade. It does not send a payment. The hidden change was rejected.",
+      "scenario": "B3"
+    }
+  ],
+  "viewports": [
+    {
+      "dialogClosed": true,
+      "overflow": false,
+      "pageWidth": 345,
+      "tableWidth": 304.8000183105469,
+      "technicalOutsideDrawer": 0,
+      "theme": "light",
+      "width": 360
+    },
+    {
+      "dialogClosed": true,
+      "overflow": false,
+      "pageWidth": 375,
+      "tableWidth": 335.20001220703125,
+      "technicalOutsideDrawer": 0,
+      "theme": "light",
+      "width": 390
+    },
+    {
+      "dialogClosed": true,
+      "overflow": false,
+      "pageWidth": 753,
+      "tableWidth": 603.375,
+      "technicalOutsideDrawer": 0,
+      "theme": "light",
+      "width": 768
+    },
+    {
+      "dialogClosed": true,
+      "overflow": false,
+      "pageWidth": 1265,
+      "tableWidth": 1050.4000244140625,
+      "technicalOutsideDrawer": 0,
+      "theme": "light",
+      "width": 1280
+    },
+    {
+      "dialogClosed": true,
+      "overflow": false,
+      "pageWidth": 1905,
+      "tableWidth": 1040,
+      "technicalOutsideDrawer": 0,
+      "theme": "light",
+      "width": 1920
+    },
+    {
+      "dialogClosed": true,
+      "overflow": false,
+      "pageWidth": 345,
+      "tableWidth": 304.8000183105469,
+      "technicalOutsideDrawer": 0,
+      "theme": "dark",
+      "width": 360
+    },
+    {
+      "dialogClosed": true,
+      "overflow": false,
+      "pageWidth": 375,
+      "tableWidth": 335.20001220703125,
+      "technicalOutsideDrawer": 0,
+      "theme": "dark",
+      "width": 390
+    },
+    {
+      "dialogClosed": true,
+      "overflow": false,
+      "pageWidth": 753,
+      "tableWidth": 603.375,
+      "technicalOutsideDrawer": 0,
+      "theme": "dark",
+      "width": 768
+    },
+    {
+      "dialogClosed": true,
+      "overflow": false,
+      "pageWidth": 1265,
+      "tableWidth": 1050.4000244140625,
+      "technicalOutsideDrawer": 0,
+      "theme": "dark",
+      "width": 1280
+    },
+    {
+      "dialogClosed": true,
+      "overflow": false,
+      "pageWidth": 1905,
+      "tableWidth": 1040,
+      "technicalOutsideDrawer": 0,
+      "theme": "dark",
+      "width": 1920
+    }
+  ],
+  "drawer": {
+    "backward": "Copy sent token units (6 decimals)",
+    "forward": "Close details",
+    "restoredFocus": "Show technical details",
+    "backgroundScroll": "hidden",
+    "dialogWidth": 360,
+    "fontLoaded": true,
+    "overflow": false,
+    "viewportWidth": 360
+  },
+  "balanceAnimation": {
+    "afterCells": [
+      {
+        "display": "902,000",
+        "final": "0",
+        "width": 71.5875015258789
+      },
+      {
+        "display": "98,000",
+        "final": "1,000,000",
+        "width": 71.5875015258789
+      },
+      {
+        "display": "0",
+        "final": "0",
+        "width": 8.949999809265137
+      }
+    ],
+    "motion": ".6s"
+  },
+  "reset": {
+    "balances": "The shared fund\n\n1,000,000\ntest USDC\n\nApproved recipient\n\n0\ntest USDC\n\nThe bad actor\n\n0\ntest USDC",
+    "hasResult": false,
+    "notice": "Starting demo data restored. No payment was made.",
+    "selected": 0
+  }
+}

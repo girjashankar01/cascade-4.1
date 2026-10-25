@@ -70,6 +70,8 @@
   --bottom-rail-height: 5rem;
   --tab-label-max: 12rem;
   --dialog-max: 30rem;
+  --drawer-max: 36rem;
+  --execution-lock-width: 12rem;
   --field-border-width: 1px;
   --dialog-backdrop: rgb(0 0 0 / 0.45);
   /* Material colors belong only to the original lock artwork. */

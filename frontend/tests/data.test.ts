@@ -129,3 +129,14 @@ test('a timed-out POST is unconfirmed and a second submission is prevented', asy
   await assert.rejects(service.run('live', 'two', 'A'), { code: 'LIVE_BUSY' })
   assert.equal(posts, 1)
 })
+
+test('technical evidence only exposes validated allowlisted values', async () => {
+  const { technicalRows } = await import('../src/data/technical.ts')
+  const result = await createFixtureService().run('A')
+  const rows = technicalRows(result, { private_key: 'secret', error: 'raw stack', execution_result: { tx_hash: 'unsafe text', private_key: 'another secret' }, slot_verified: { current_implementation: '0x' + 'a'.repeat(40) } })
+  assert.ok(rows.some(row => row.label === 'Current implementation'))
+  assert.ok(rows.every(row => !/secret|stack|unsafe/.test(row.value)))
+  assert.ok(!rows.some(row => row.label === 'Transaction hash'))
+  const hash = '0x' + 'b'.repeat(64)
+  assert.equal(technicalRows(result, { execution_result: { tx_hash: hash } }).find(row => row.label === 'Transaction hash')?.value, hash)
+})

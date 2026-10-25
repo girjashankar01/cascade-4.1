@@ -1,7 +1,7 @@
 # Frontend redesign plan — Stage 0
 
 Date: 2026-10-26 (Asia/Calcutta)
-Status: Stage 0 approved/reviewed; Stage 1 PASS; Stage 2 built, pending independent review. Stage 0 itself changed no application code.
+Status: Stage 0 approved/reviewed; Stage 1 PASS; Stage 2 PASS (bbc7716); Stage 3 built, pending independent review. Stage 0 itself changed no application code.
 Scope update, 2026-10-26: the owner explicitly requested skipping the landing page. Marketing sections, hero/story, pinned landing sequence, mini-demo, landing-only Lenis and landing social assets are omitted. `/` now redirects directly to `/app`. Continue the workbench stages and their review gates. The original landing proposals below are historical context, superseded by this update.
 Product: DAO Accountability Engine (existing repository name; no invented brand).
 Repository: `https://github.com/girjashankar01/cascade-4.1.git`

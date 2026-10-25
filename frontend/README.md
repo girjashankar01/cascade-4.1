@@ -1,8 +1,6 @@
-# Frontend — workbench shell (Stage 2)
+# Frontend — execution workbench (Stage 3)
 
-React + TypeScript + Vite. The owner skipped the marketing landing page; `/` opens `/app` directly. Stage 2 adds routing, workspace tabs, section navigation, the data/fixture boundary and shared preferences. The run button is still unavailable in this review preview; Stage 3 adds the execution UI. Remaining workspace pages currently show truthful empty states. Backend and contracts are unchanged.
-
-From this directory:
+React + TypeScript + Vite. The owner skipped the marketing landing page; `/` opens `/app` directly. Stages 1 and 2 passed independent review. Stage 3 adds four runnable scenarios, progress, result comparisons, exact before/after balances, reset and a technical drawer. The remaining pages are Stage 4; pitch and final polish remain later stages. Backend and contracts are unchanged.
 
 ```powershell
 npm ci
@@ -12,23 +10,17 @@ npm run lint
 npm run typecheck
 npm run check:contrast
 npm test
-```
-
-Open [the workbench](http://127.0.0.1:5173/app?mode=demo). Use New, Rename and Close to compare independent scenario workspaces. ArrowLeft/ArrowRight/Home/End switch workspace tabs. On phones, pages use a labelled selector and sections use a visible bottom bar. On desktop, the section rail expands on hover/focus and can keep its labels visible.
-
-Theme and reduced-motion preference survive route changes and reload. Explicit `?theme=light` / `?theme=dark` takes precedence on initial load and stays synchronized through the router. `?mode=live` selects the local service for the initial workspace; new workspaces start in demo mode. The local-service check is read-only and offers demo data when unavailable. Demo mode makes no backend calls. No payment is sent by this preview.
-
-Production review:
-
-```powershell
-npm run build
 npm run preview -- --host 127.0.0.1 --port 4173 --strictPort
 ```
 
-Then open [the built workbench](http://127.0.0.1:4173/app?mode=demo). The old `/style-tile` URL redirects to the workbench in production; the design tile remains available only on the development server. No backend is needed for demo mode. Fonts and assets are local; the initial dependency install requires registry access. Tests use Node 24's native TypeScript test runner (tested on 24.13.0).
+Open [the built workbench](http://127.0.0.1:4173/app?mode=demo), choose a scenario, read its plan, and select Run safety check. Demo data never calls the backend. A pays 1,000,000 test USDC to the approved recipient; B1 stops the changed recipient/amount; B3 rejects the hidden software change; C restores the starting state without approving a payment. The labelled demo sequence illustrates the fixture. Repeat payment/upgrade runs restore their starting balances, with an explicit note. Reset demo restores the current workspace and clears its selection/result.
 
-Shared values: `src/design/tokens.css`. Font faces: `src/design/fonts.css`. Reusable styles: `src/design/components.css`. The original lock remains available for Stage 3 and is absent from the Stage 2 production bundle because the development tile is excluded. Technical monospace remains reserved for the future closed drawer.
+Use New, Rename and Close for independent workspaces. ArrowLeft/ArrowRight/Home/End switch tabs. A run continues in its original workspace when navigating away. Run/reset, source switching, scenario changes and closing the busy workspace are guarded. Phones have a page selector and bottom section navigation. Theme and reduced motion persist across routes/reload; both manual and system reduced motion disable movement.
 
-Set public `VITE_API_BASE_URL` to change the service address (default http://127.0.0.1:8000). Never add keys or credentials. Read [CONTRACT-ASSUMPTIONS.md](../CONTRACT-ASSUMPTIONS.md) for response validation, exact balances, global live-operation locking and reset semantics. A timed-out submitted operation is not retried; uncertain live state stays blocked while demo work remains available.
+The result compares the plan and the submitted action and states whether money was stopped, unknown, or not applicable. Amounts are exact integer strings/BigInt. All amounts are test tokens. Show technical details opens the single native side drawer; Tab wraps, Escape closes and focus returns. Hash/address values are shortened there with full-value Copy; no invented transaction evidence is attached to fixtures.
 
-See [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md), [licenses](../LICENSES-AND-SOURCES.md), and the builder's [Stage 2 handoff](../handoff/STAGE-2-BUILD.md). Reviewer-owned files are independent evidence and are never edited by the builder.
+`?mode=live` selects the local service for the initial workspace; new tabs start with demo data. `VITE_API_BASE_URL` is public config (default http://127.0.0.1:8000), never a key. Live run sends one explicit changing request after connection checks. Live reset runs existing scenario C and affects all live workspaces; older records are marked historical. A timed-out submitted operation is not retried or unlocked automatically. If unavailable, switch to Demo data and use Reset demo. Missing backend deployment/upgrade dependencies remain an external integration limitation; no real live run is claimed verified.
+
+The initial dependency install requires registry access. Fonts/assets are local. Tests use Node 24's native TypeScript runner, verified on 24.13.0. The production `/style-tile` URL redirects to the workbench; the tile is development-only. The lock is a lazy chunk with a static fallback. Token/style files live in `src/design/`; runtime data boundaries live in `src/data/`. No component calls fetch.
+
+See [Stage 3 build handoff](../handoff/STAGE-3-BUILD.md), [contract assumptions](../CONTRACT-ASSUMPTIONS.md), [design system](DESIGN-SYSTEM.md) and [licenses](../LICENSES-AND-SOURCES.md). Independent review is required before Stage 4.

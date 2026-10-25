@@ -32,3 +32,49 @@ test('unknown ids and blank names do not corrupt the active workspace', () => {
   assert.equal(workspaceReducer(state, { type: 'activate', id: 'missing' }), state)
   assert.equal(workspaceReducer(state, { type: 'rename', id: state.activeId, name: '  ' }), state)
 })
+
+test('reset stays locked during execution and resets selection only on completion', () => {
+  let state = initialWorkspaces()
+  const id = state.activeId
+  state = workspaceReducer(state, { type: 'select', id, scenario: 'A' })
+  state = workspaceReducer(state, { type: 'begin-reset', id })
+  assert.equal(state.items[0].operation, 'reset')
+  assert.equal(state.items[0].phase, 'running')
+  assert.equal(workspaceReducer(state, { type: 'start', id }), state)
+  assert.equal(workspaceReducer(state, { type: 'close', id }), state)
+  state = workspaceReducer(state, { type: 'reset-done', id })
+  assert.equal(state.items[0].scenario, null)
+  assert.equal(state.items[0].result, null)
+  assert.match(state.items[0].notice!, /restored/)
+})
+
+test('progress and completion stay with their original workspace after switching tabs', async () => {
+  const { createFixtureService } = await import('../src/data/fixtures.ts')
+  let state = initialWorkspaces()
+  const id = state.activeId
+  state = workspaceReducer(state, { type: 'select', id, scenario: 'B1' })
+  state = workspaceReducer(state, { type: 'start', id })
+  state = workspaceReducer(state, { type: 'add', id: 'other' })
+  state = workspaceReducer(state, { type: 'progress', id, step: 3 })
+  const result = await createFixtureService().run('B1')
+  state = workspaceReducer(state, { type: 'finish', id, result })
+  result.reason = 'Changed by consumer'
+  assert.equal(state.activeId, 'other')
+  assert.equal(state.items[0].phase, 'completed')
+  assert.equal(state.items[0].result!.outcome, 'blocked')
+  assert.notEqual(state.items[0].result!.reason, result.reason)
+  assert.equal(state.items[1].result, null)
+})
+
+test('later live completion marks other live records as historical', async () => {
+  const { createFixtureService } = await import('../src/data/fixtures.ts')
+  const result = { ...await createFixtureService().run('A'), source: 'live' as const }
+  let state = initialWorkspaces('live')
+  const first = state.activeId
+  state = workspaceReducer(state, { type: 'finish', id: first, result })
+  state = workspaceReducer(state, { type: 'add', id: 'next-live' })
+  state = workspaceReducer(state, { type: 'mode', id: 'next-live', mode: 'live' })
+  state = workspaceReducer(state, { type: 'finish', id: 'next-live', result: { ...result, id: 'later' } })
+  assert.equal(state.items[0].resultHistorical, true)
+  assert.equal(state.items[1].resultHistorical, false)
+})

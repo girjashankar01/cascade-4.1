@@ -7,6 +7,10 @@ export interface Workspace {
   phase: 'idle' | 'running' | 'completed' | 'error'
   result: RunResult | null
   error: string | null
+  step: number
+  operation: 'run' | 'reset'
+  notice: string | null
+  resultHistorical: boolean
 }
 export interface WorkspaceState { items: Workspace[]; activeId: string; nextNumber: number }
 export type WorkspaceAction =
@@ -16,11 +20,14 @@ export type WorkspaceAction =
   | { type: 'mode'; id: string; mode: Mode }
   | { type: 'select'; id: string; scenario: ScenarioId }
   | { type: 'start' | 'reset'; id: string }
+  | { type: 'begin-reset'; id: string }
+  | { type: 'progress'; id: string; step: number }
+  | { type: 'reset-done'; id: string }
   | { type: 'finish'; id: string; result: RunResult }
   | { type: 'fail'; id: string; message: string }
 
 export function newWorkspace(id: string, name: string, mode: Mode = 'demo'): Workspace {
-  return { id, name, mode, scenario: null, phase: 'idle', result: null, error: null }
+  return { id, name, mode, scenario: null, phase: 'idle', result: null, error: null, step: -1, operation: 'run', notice: null, resultHistorical: false }
 }
 export function initialWorkspaces(mode: Mode = 'demo'): WorkspaceState {
   const initial = newWorkspace(crypto.randomUUID(), 'Payment review', mode)
@@ -51,12 +58,14 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
     if (!name) return state
     updated = { ...current, name }
   }
-  if (current.phase === 'running' && ['mode', 'select', 'start', 'reset'].includes(action.type)) return state
-  if (action.type === 'mode') updated = { ...current, mode: action.mode, phase: 'idle', result: null, error: null }
-  if (action.type === 'select') updated = { ...current, scenario: action.scenario, phase: 'idle', result: null, error: null }
-  if (action.type === 'start') { if (!current.scenario) return state; updated = { ...current, phase: 'running', result: null, error: null } }
-  if (action.type === 'reset') updated = { ...current, scenario: null, phase: 'idle', result: null, error: null }
-  if (action.type === 'finish') updated = { ...current, phase: 'completed', result: structuredClone(action.result), error: null }
+  if (current.phase === 'running' && ['mode', 'select', 'start', 'reset', 'begin-reset'].includes(action.type)) return state
+  if (action.type === 'mode') updated = { ...current, mode: action.mode, phase: 'idle', result: null, error: null, step: -1, notice: null }
+  if (action.type === 'select') updated = { ...current, scenario: action.scenario, phase: 'idle', result: null, error: null, step: -1, notice: null }
+  if (action.type === 'start') { if (!current.scenario) return state; updated = { ...current, phase: 'running', result: null, error: null, step: 0, operation: 'run', notice: null } }
+  if (action.type === 'begin-reset') updated = { ...current, phase: 'running', result: null, error: null, step: -1, operation: 'reset', notice: null }
+  if (action.type === 'progress' && current.phase === 'running') updated = { ...current, step: action.step }
+  if (action.type === 'reset' || action.type === 'reset-done') updated = { ...current, scenario: null, phase: 'idle', result: null, error: null, step: -1, notice: 'Starting demo data restored. No payment was made.' }
+  if (action.type === 'finish') updated = { ...current, phase: 'completed', result: structuredClone(action.result), error: null, step: 4, resultHistorical: false }
   if (action.type === 'fail') updated = { ...current, phase: 'error', error: action.message }
-  return { ...state, items: state.items.map(item => item.id === current.id ? updated : item) }
+  return { ...state, items: state.items.map(item => item.id === current.id ? updated : action.type === 'finish' && action.result.source === 'live' && item.result?.source === 'live' ? { ...item, resultHistorical: true } : item) }
 }
