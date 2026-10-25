@@ -4,16 +4,24 @@ CASCADE ’26, Problem 4.1. Architectural source of truth:
 [final build guide](docs/dao-build-guide-final.md). The older
 [project handoff](docs/project%20handoff.md) is preserved as background.
 
-Stage 0 provides a FastAPI health endpoint, React/TypeScript/Vite landing page,
-Foundry Counter sample and dependency smoke test, and a read-only Anvil connectivity
-script. Validation status is recorded in [handoff.md](handoff.md).
-No production accountability workflow is implemented.
+Stage 1 core contracts, Python EIP-712 signing, and cross-language on-chain
+verification are fully implemented and passing. Validation status is recorded in
+[handoff.md](handoff.md) and technical decisions in [decisions.md](decisions.md).
 
-Stage 0 validation passed on 2026-10-25: Python 3.11.17 through uv, locked sync,
-one backend test, live health HTTP 200, Python chain read (`block_number=0`),
-three Foundry tests, frontend production build/lint and dev HTTP 200. All three
-processes ran together and were stopped after validation. Optional OCR inference
-was not run. pytest emitted a nonfatal Starlette/httpx deprecation warning.
+## Stage 1 status and test results
+
+- **Solidity contracts (`contracts/src/`):**
+  - `MockToken.sol`: OpenZeppelin ERC-20 (6 decimals) for payout simulation.
+  - `GovernanceRegistry.sol`: Sequential proposal version hash chain with ownership protection and governance-only approvals.
+  - `Treasury.sol`: Holds ETH/tokens; execution restricted strictly to the configured executor.
+  - `GuardedExecutor.sol`: EIP-712 attestation verification (`GuardedExecutor`, `v1`), `VERIFIED == 1` check, actionHash validation, and single-use execution via Treasury.
+- **Python cryptography (`backend/app/chain/attest.py`):**
+  - Exact `actionHash` computation: `keccak256(abi.encode(target, value, keccak256(calldata)))`.
+  - Canonical EIP-712 structured data signing with `eth-account` (v0.14).
+- **Test validation results:**
+  - `forge test -vv`: 22 passed across 3 suites (19 unit/revert tests in `Stage1Core.t.sol`).
+  - `uv run pytest`: 6 passed across 3 suites (`test_attest.py`, `test_health.py`, `test_interop.py`).
+  - Cross-language interop test: Python computes action hash, signs EIP-712 attestation, and executes successfully on live Anvil chain.
 
 ## Planned architecture and limits
 

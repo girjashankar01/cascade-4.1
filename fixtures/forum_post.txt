@@ -1,0 +1,6 @@
+Community Discussion on Proposal PROP-001
+
+Author: Governance Working Group
+Date: October 2026
+
+Regarding the grant proposal PROP-001 for recipient 0x9965507D1a55BCC6475675304Ca994970De97744, during the recent community budget review the revised allocation discussed in working group sessions is $5.8M (5,800,000 USDC) to account for additional third-party audits and contingency costs.

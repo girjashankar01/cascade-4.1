@@ -1,0 +1,93 @@
+{
+  "proposal_id": "PROP-001",
+  "sources": [
+    {
+      "filename": "proposal.pdf",
+      "claims": [
+        {
+          "field": "amount",
+          "value": "5000000",
+          "display_value": "$5.0M",
+          "quote": "This proposal requests a payout of $5.0M (5,000,000 USDC) to the designated recipient address 0x9965507D1a55BCC6475675304Ca994970De97744.",
+          "page": 1,
+          "confidence": 0.95,
+          "expected_status": "UNCERTAIN"
+        },
+        {
+          "field": "token",
+          "value": "USDC",
+          "display_value": "USDC",
+          "quote": "This proposal requests a payout of $5.0M (5,000,000 USDC) to the designated recipient address 0x9965507D1a55BCC6475675304Ca994970De97744.",
+          "page": 1,
+          "confidence": 0.95,
+          "expected_status": "GROUNDED"
+        },
+        {
+          "field": "recipient",
+          "value": "0x9965507D1a55BCC6475675304Ca994970De97744",
+          "display_value": "0x9965507D1a55BCC6475675304Ca994970De97744",
+          "quote": "This proposal requests a payout of $5.0M (5,000,000 USDC) to the designated recipient address 0x9965507D1a55BCC6475675304Ca994970De97744.",
+          "page": 1,
+          "confidence": 0.95,
+          "expected_status": "GROUNDED"
+        },
+        {
+          "field": "purpose",
+          "value": "Funding infrastructure security audits and core protocol development for Q1.",
+          "display_value": "Funding infrastructure security audits and core protocol development for Q1.",
+          "quote": "Funding infrastructure security audits and core protocol development for Q1.",
+          "page": 1,
+          "confidence": 0.9,
+          "expected_status": "GROUNDED"
+        },
+        {
+          "field": "assumptions",
+          "value": "Assumes milestone completion and quarterly reporting delivered to community governance.",
+          "display_value": "Assumes milestone completion and quarterly reporting delivered to community governance.",
+          "quote": "Assumes milestone completion and quarterly reporting delivered to community governance.",
+          "page": 1,
+          "confidence": 0.9,
+          "expected_status": "GROUNDED"
+        }
+      ]
+    },
+    {
+      "filename": "forum_post.txt",
+      "claims": [
+        {
+          "field": "amount",
+          "value": "5800000",
+          "display_value": "$5.8M",
+          "quote": "revised allocation discussed in working group sessions is $5.8M (5,800,000 USDC) to account for additional third-party audits and contingency costs.",
+          "page": 1,
+          "confidence": 0.95,
+          "expected_status": "UNCERTAIN"
+        },
+        {
+          "field": "token",
+          "value": "USDC",
+          "display_value": "USDC",
+          "quote": "revised allocation discussed in working group sessions is $5.8M (5,800,000 USDC)",
+          "page": 1,
+          "confidence": 0.95,
+          "expected_status": "GROUNDED"
+        },
+        {
+          "field": "recipient",
+          "value": "0x9965507D1a55BCC6475675304Ca994970De97744",
+          "display_value": "0x9965507D1a55BCC6475675304Ca994970De97744",
+          "quote": "Regarding the grant proposal PROP-001 for recipient 0x9965507D1a55BCC6475675304Ca994970De97744",
+          "page": 1,
+          "confidence": 0.95,
+          "expected_status": "GROUNDED"
+        }
+      ]
+    }
+  ],
+  "expected_conflict": {
+    "field": "amount",
+    "value_a": "5000000",
+    "value_b": "5800000",
+    "status": "UNRESOLVED"
+  }
+}
