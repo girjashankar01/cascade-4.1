@@ -30,7 +30,7 @@ export function newWorkspace(id: string, name: string, mode: Mode = 'demo'): Wor
   return { id, name, mode, scenario: null, phase: 'idle', result: null, error: null, step: -1, operation: 'run', notice: null, resultHistorical: false }
 }
 export function initialWorkspaces(mode: Mode = 'demo'): WorkspaceState {
-  const initial = newWorkspace(crypto.randomUUID(), 'Payment review', mode)
+  const initial = newWorkspace(crypto.randomUUID(), 'Execution review', mode)
   return { items: [initial], activeId: initial.id, nextNumber: 2 }
 }
 export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
@@ -47,7 +47,7 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
     const index = state.items.indexOf(current)
     const remaining = state.items.filter(item => item.id !== current.id)
     if (!remaining.length) {
-      const item = newWorkspace(action.replacementId ?? crypto.randomUUID(), 'Payment review')
+      const item = newWorkspace(action.replacementId ?? crypto.randomUUID(), 'Execution review')
       return { ...state, items: [item], activeId: item.id }
     }
     return { ...state, items: remaining, activeId: state.activeId === current.id ? remaining[Math.min(index, remaining.length - 1)].id : state.activeId }

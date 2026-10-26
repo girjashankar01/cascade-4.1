@@ -10,7 +10,13 @@ import { WorkspaceTabs } from './WorkspaceTabs'
 import { SectionRail } from './SectionRail'
 import './WorkbenchShell.css'
 
-const pages = [{ to: '/app', name: 'Workbench' }, { to: '/app/payment-request', name: 'Payment request' }, { to: '/app/approved-plan', name: 'Approved plan' }, { to: '/app/record', name: 'Record of what happened' }, { to: '/app/coverage', name: 'What this does and does not cover' }]
+const pages = [
+  { to: '/app',             name: 'Execution workbench' },
+  { to: '/app/proposal',    name: 'Proposal' },
+  { to: '/app/manifest',    name: 'Manifest and versions' },
+  { to: '/app/audit',       name: 'Audit record' },
+  { to: '/app/coverage',    name: 'What this does and does not cover' },
+]
 
 export function WorkbenchShell() {
   const { active, dispatch } = useWorkspaces()

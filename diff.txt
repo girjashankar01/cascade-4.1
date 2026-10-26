@@ -1,0 +1,162 @@
+ CONTRACT-ASSUMPTIONS.md                            |  48 +++
+ LICENSES-AND-SOURCES.md                            |  30 ++
+ frontend/DESIGN-SYSTEM.md                          |  33 ++
+ frontend/README.md                                 |  24 +-
+ frontend/index.html                                |   3 +-
+ frontend/package-lock.json                         | 158 +++++++-
+ frontend/package.json                              |  12 +-
+ frontend/public/favicon.svg                        |   2 +-
+ frontend/public/icons.svg                          |  24 --
+ frontend/public/licenses/cookie-MIT.txt            |  23 ++
+ frontend/public/licenses/framer-motion-MIT.txt     |  21 +
+ frontend/public/licenses/ibm-plex-mono-OFL.txt     |  93 +++++
+ frontend/public/licenses/motion-MIT.txt            |  21 +
+ frontend/public/licenses/motion-dom-MIT.txt        |  21 +
+ frontend/public/licenses/motion-utils-MIT.txt      |  21 +
+ frontend/public/licenses/react-MIT.txt             |  21 +
+ frontend/public/licenses/react-dom-MIT.txt         |  21 +
+ frontend/public/licenses/react-router-MIT.txt      |  23 ++
+ frontend/public/licenses/react-router-dom-MIT.txt  |  23 ++
+ frontend/public/licenses/scheduler-MIT.txt         |  21 +
+ frontend/public/licenses/set-cookie-parser-MIT.txt |  21 +
+ frontend/public/licenses/source-sans-3-OFL.txt     |  93 +++++
+ frontend/public/licenses/space-grotesk-OFL.txt     |  93 +++++
+ frontend/public/licenses/tslib-0BSD.txt            |  12 +
+ frontend/public/licenses/tslib-CopyrightNotice.txt |  14 +
+ frontend/scripts/check-contrast.mjs                |  41 ++
+ frontend/src/App.css                               |   9 -
+ frontend/src/App.tsx                               |  81 +++-
+ frontend/src/app/ThemeProvider.tsx                 |  33 ++
+ frontend/src/app/WorkspaceProvider.tsx             |  40 ++
+ frontend/src/app/theme.ts                          |   8 +
+ frontend/src/app/workspace-context.ts              |   9 +
+ frontend/src/app/workspaces.ts                     |  71 ++++
+ frontend/src/components/layout/SectionRail.tsx     |  62 +++
+ frontend/src/components/layout/WorkbenchShell.css  | 131 ++++++
+ frontend/src/components/layout/WorkbenchShell.tsx  |  44 +++
+ frontend/src/components/layout/WorkspaceTabs.tsx   |  40 ++
+ frontend/src/components/lock/LazyLock.tsx          |  15 +
+ frontend/src/components/lock/LockObject.tsx        |  46 +++
+ frontend/src/components/ui/Button.tsx              |   5 +
+ frontend/src/components/ui/Icon.tsx                |  24 ++
+ frontend/src/components/ui/StatusMark.tsx          |   4 +
+ frontend/src/components/ui/ThemeToggle.tsx         |   7 +
+ frontend/src/data/adapters.ts                      |  64 +++
+ frontend/src/data/api.ts                           |  73 ++++
+ frontend/src/data/client.ts                        |  20 +
+ frontend/src/data/fixtures.ts                      |  69 ++++
+ frontend/src/data/secondaryData.ts                 | 341 ++++++++++++++++
+ frontend/src/data/technical.ts                     |  19 +
+ frontend/src/data/types.ts                         |  46 +++
+ frontend/src/design/components.css                 |  25 ++
+ frontend/src/design/fonts.css                      |  29 ++
+ frontend/src/design/global.css                     |  68 ++++
+ frontend/src/design/motion.ts                      |  11 +
+ frontend/src/design/tokens.css                     | 164 ++++++++
+ frontend/src/features/pages/pages.css              | 439 +++++++++++++++++++++
+ frontend/src/features/workbench/RunResult.tsx      |  40 ++
+ .../src/features/workbench/TechnicalDrawer.tsx     |  31 ++
+ frontend/src/features/workbench/workbench.css      |  58 +++
+ frontend/src/hooks/useConnection.ts                |  20 +
+ frontend/src/index.css                             |   5 +-
+ frontend/src/pages/ApprovedPlanPage.tsx            | 104 +++++
+ frontend/src/pages/CoveragePage.tsx                |  76 ++++
+ frontend/src/pages/PaymentRequestPage.tsx          | 127 ++++++
+ frontend/src/pages/RecordPage.tsx                  | 145 +++++++
+ frontend/src/pages/StyleTilePage.css               | 101 +++++
+ frontend/src/pages/StyleTilePage.tsx               |  73 ++++
+ frontend/src/pages/WorkbenchPage.tsx               |  62 +++
+ frontend/src/pages/WorkspacePage.tsx               |  16 +
+ frontend/tests/data.test.ts                        | 142 +++++++
+ frontend/tests/pages.test.ts                       |  80 ++++
+ frontend/tests/workspaces.test.ts                  |  80 ++++
+ frontend/tsconfig.tests.json                       |   7 +
+ handoff/DECISIONS.md                               |  42 ++
+ handoff/OPEN-ISSUES.md                             |  23 ++
+ handoff/PLAN.md                                    | 210 ++++++++++
+ handoff/REVIEWER-CHARTER.md                        | 141 +++++++
+ handoff/STAGE-0-BUILD.md                           |  86 ++++
+ handoff/STAGE-0-REVIEW.md                          |  91 +++++
+ handoff/STAGE-1-BUILD.md                           | 109 +++++
+ handoff/STAGE-1-CONTRAST.md                        |  54 +++
+ handoff/STAGE-1-REVIEW.md                          |  87 ++++
+ handoff/STAGE-2-BUILD.md                           |  96 +++++
+ handoff/STAGE-2-REVIEW.md                          |  87 ++++
+ handoff/STAGE-3-BUILD.md                           |  76 ++++
+ handoff/STAGE-3-REVIEW.md                          | 120 ++++++
+ handoff/STAGE-4-BUILD.md                           |  44 +++
+ handoff/STAGE-4-REVIEW.md                          |  74 ++++
+ handoff/builder-evidence/stage-1/dark-1280.jpg     | Bin 0 -> 218422 bytes
+ handoff/builder-evidence/stage-1/dark-1920.jpg     | Bin 0 -> 232047 bytes
+ handoff/builder-evidence/stage-1/dark-360.jpg      | Bin 0 -> 173925 bytes
+ handoff/builder-evidence/stage-1/dark-390.jpg      | Bin 0 -> 173858 bytes
+ handoff/builder-evidence/stage-1/dark-768.jpg      | Bin 0 -> 182234 bytes
+ .../stage-1/keyboard-choice-dark.jpg               | Bin 0 -> 54422 bytes
+ handoff/builder-evidence/stage-1/light-1280.jpg    | Bin 0 -> 212810 bytes
+ handoff/builder-evidence/stage-1/light-1920.jpg    | Bin 0 -> 228056 bytes
+ handoff/builder-evidence/stage-1/light-360.jpg     | Bin 0 -> 168762 bytes
+ handoff/builder-evidence/stage-1/light-390.jpg     | Bin 0 -> 168932 bytes
+ handoff/builder-evidence/stage-1/light-768.jpg     | Bin 0 -> 177414 bytes
+ handoff/builder-evidence/stage-1/measurements.json |  72 ++++
+ handoff/builder-evidence/stage-1/preview-dark.jpg  | Bin 0 -> 55058 bytes
+ handoff/builder-evidence/stage-1/preview-light.jpg | Bin 0 -> 54525 bytes
+ .../stage-1/reduced-motion-dark.jpg                | Bin 0 -> 219898 bytes
+ handoff/builder-evidence/stage-2/dark-1280.jpg     | Bin 0 -> 183396 bytes
+ handoff/builder-evidence/stage-2/dark-1920.jpg     | Bin 0 -> 194854 bytes
+ handoff/builder-evidence/stage-2/dark-360.jpg      | Bin 0 -> 149514 bytes
+ handoff/builder-evidence/stage-2/dark-390.jpg      | Bin 0 -> 148073 bytes
+ handoff/builder-evidence/stage-2/dark-768.jpg      | Bin 0 -> 170404 bytes
+ handoff/builder-evidence/stage-2/light-1280.jpg    | Bin 0 -> 177213 bytes
+ handoff/builder-evidence/stage-2/light-1920.jpg    | Bin 0 -> 188703 bytes
+ handoff/builder-evidence/stage-2/light-360.jpg     | Bin 0 -> 145741 bytes
+ handoff/builder-evidence/stage-2/light-390.jpg     | Bin 0 -> 143903 bytes
+ handoff/builder-evidence/stage-2/light-768.jpg     | Bin 0 -> 165869 bytes
+ handoff/builder-evidence/stage-2/live-fallback.jpg | Bin 0 -> 190339 bytes
+ handoff/builder-evidence/stage-2/measurements.json | 100 +++++
+ .../builder-evidence/stage-2/mobile-sections.jpg   | Bin 0 -> 40146 bytes
+ .../stage-2/navigation-checks.json                 |  20 +
+ handoff/builder-evidence/stage-2/preview-light.jpg | Bin 0 -> 75563 bytes
+ handoff/builder-evidence/stage-2/rename-dialog.jpg | Bin 0 -> 67328 bytes
+ handoff/builder-evidence/stage-2/route-checks.json |  25 ++
+ .../stage-2/section-navigation.jpg                 | Bin 0 -> 81606 bytes
+ handoff/builder-evidence/stage-3/B1-repeat.jpg     | Bin 0 -> 244688 bytes
+ handoff/builder-evidence/stage-3/B1.jpg            | Bin 0 -> 240618 bytes
+ handoff/builder-evidence/stage-3/B3.jpg            | Bin 0 -> 248698 bytes
+ handoff/builder-evidence/stage-3/C.jpg             | Bin 0 -> 237226 bytes
+ handoff/builder-evidence/stage-3/allowed.jpg       | Bin 0 -> 232958 bytes
+ .../builder-evidence/stage-3/balances-phone.jpg    | Bin 0 -> 28077 bytes
+ handoff/builder-evidence/stage-3/checks.json       | 199 ++++++++++
+ handoff/builder-evidence/stage-3/console.json      |   1 +
+ handoff/builder-evidence/stage-3/dark-1280.jpg     | Bin 0 -> 251717 bytes
+ handoff/builder-evidence/stage-3/dark-1920.jpg     | Bin 0 -> 266925 bytes
+ handoff/builder-evidence/stage-3/dark-360.jpg      | Bin 0 -> 207924 bytes
+ handoff/builder-evidence/stage-3/dark-390.jpg      | Bin 0 -> 206301 bytes
+ handoff/builder-evidence/stage-3/dark-768.jpg      | Bin 0 -> 225820 bytes
+ handoff/builder-evidence/stage-3/light-1280.jpg    | Bin 0 -> 246297 bytes
+ handoff/builder-evidence/stage-3/light-1920.jpg    | Bin 0 -> 259142 bytes
+ handoff/builder-evidence/stage-3/light-360.jpg     | Bin 0 -> 202816 bytes
+ handoff/builder-evidence/stage-3/light-390.jpg     | Bin 0 -> 200271 bytes
+ handoff/builder-evidence/stage-3/light-768.jpg     | Bin 0 -> 218710 bytes
+ .../builder-evidence/stage-3/preview-result.jpg    | Bin 0 -> 42088 bytes
+ .../stage-3/technical-drawer-phone.jpg             | Bin 0 -> 29041 bytes
+ .../builder-evidence/stage-3/technical-drawer.jpg  | Bin 0 -> 59553 bytes
+ handoff/screenshots/s1-style-tile-1280-dark.jpg    | Bin 0 -> 218422 bytes
+ handoff/screenshots/s1-style-tile-1280-light.jpg   | Bin 0 -> 212810 bytes
+ handoff/screenshots/s1-style-tile-360-dark.jpg     | Bin 0 -> 173925 bytes
+ handoff/screenshots/s1-style-tile-360-light.jpg    | Bin 0 -> 168762 bytes
+ handoff/screenshots/s2-live-fallback.jpg           | Bin 0 -> 190339 bytes
+ handoff/screenshots/s2-rename-dialog.jpg           | Bin 0 -> 67328 bytes
+ handoff/screenshots/s2-workbench-1280-dark.jpg     | Bin 0 -> 183396 bytes
+ handoff/screenshots/s2-workbench-1280-light.jpg    | Bin 0 -> 177213 bytes
+ handoff/screenshots/s2-workbench-360-dark.jpg      | Bin 0 -> 149514 bytes
+ handoff/screenshots/s2-workbench-360-light.jpg     | Bin 0 -> 145741 bytes
+ handoff/screenshots/s3-scenario-a-allowed.jpg      | Bin 0 -> 232958 bytes
+ handoff/screenshots/s3-scenario-b1-blocked.jpg     | Bin 0 -> 240618 bytes
+ handoff/screenshots/s3-scenario-b3-blocked.jpg     | Bin 0 -> 248698 bytes
+ handoff/screenshots/s3-scenario-c-reset.jpg        | Bin 0 -> 237226 bytes
+ handoff/screenshots/s3-technical-drawer.jpg        | Bin 0 -> 59553 bytes
+ handoff/screenshots/s3-workbench-1280-dark.jpg     | Bin 0 -> 251717 bytes
+ handoff/screenshots/s3-workbench-1280-light.jpg    | Bin 0 -> 246297 bytes
+ handoff/screenshots/s3-workbench-390-dark.jpg      | Bin 0 -> 206301 bytes
+ handoff/screenshots/s3-workbench-390-light.jpg     | Bin 0 -> 200271 bytes
+ 161 files changed, 5777 insertions(+), 61 deletions(-)

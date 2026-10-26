@@ -6,9 +6,9 @@ import { useTheme } from './app/theme'
 import { useWorkspaces } from './app/workspace-context'
 import { WorkbenchShell } from './components/layout/WorkbenchShell'
 import { WorkbenchPage } from './pages/WorkbenchPage'
-import { PaymentRequestPage } from './pages/PaymentRequestPage'
-import { ApprovedPlanPage } from './pages/ApprovedPlanPage'
-import { RecordPage } from './pages/RecordPage'
+import { ProposalPage } from './pages/ProposalPage'
+import { ManifestPage } from './pages/ManifestPage'
+import { AuditPage } from './pages/AuditPage'
 import { CoveragePage } from './pages/CoveragePage'
 
 const StyleTile = import.meta.env.DEV ? lazy(() => import('./pages/StyleTilePage').then(module => ({ default: module.StyleTilePage }))) : null
@@ -38,10 +38,14 @@ function App() {
             <Route path="/" element={<RootRedirect />} />
             <Route path="/app" element={<WorkbenchShell />}>
               <Route index element={<WorkbenchPage />} />
-              <Route path="payment-request" element={<PaymentRequestPage />} />
-              <Route path="approved-plan" element={<ApprovedPlanPage />} />
-              <Route path="record" element={<RecordPage />} />
-              <Route path="coverage" element={<CoveragePage />} />
+              <Route path="proposal"  element={<ProposalPage />} />
+              <Route path="manifest"  element={<ManifestPage />} />
+              <Route path="audit"     element={<AuditPage />} />
+              <Route path="coverage"  element={<CoveragePage />} />
+              {/* Legacy redirects */}
+              <Route path="payment-request" element={<Navigate to="/app/proposal" replace />} />
+              <Route path="approved-plan"   element={<Navigate to="/app/manifest"  replace />} />
+              <Route path="record"          element={<Navigate to="/app/audit"     replace />} />
             </Route>
             <Route
               path="/style-tile"

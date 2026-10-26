@@ -1,8 +1,8 @@
-import { adaptBalances, adaptConnection, adaptPlan, adaptRun, asObject } from './adapters.ts'
+import { adaptBalances, adaptConnection, adaptApprovedAction, adaptRun, asObject } from './adapters.ts'
 import { createClient } from './client.ts'
 import { createFixtureService, getScenario, scenarios } from './fixtures.ts'
 import { DataError } from './types.ts'
-import type { Balances, Connection, Mode, RunResult, ScenarioId } from './types.ts'
+import type { BalanceSnapshot, Connection, Mode, RunResult, ScenarioId } from './types.ts'
 
 /** One coordinator per backend address, shared by every workspace. */
 export function createDataService(baseUrl: string, fetcher?: typeof fetch, timeoutMs?: number) {
@@ -17,7 +17,7 @@ export function createDataService(baseUrl: string, fetcher?: typeof fetch, timeo
   let liveBusy = false
   function hasPending() { try { return typeof sessionStorage !== 'undefined' && sessionStorage.getItem(marker) !== null } catch { return false } }
   let uncertain = hasPending()
-  function setPending(value: boolean) { try { if (typeof sessionStorage !== 'undefined') { if (value) sessionStorage.setItem(marker, 'unconfirmed'); else sessionStorage.removeItem(marker) } } catch { /* In-memory lock remains authoritative for this app session. */ } }
+  function setPending(value: boolean) { try { if (typeof sessionStorage !== 'undefined') { if (value) sessionStorage.setItem(marker, 'unconfirmed'); else sessionStorage.removeItem(marker) } } catch { /* In-memory lock remains authoritative. */ } }
   function fixture(workspace: string) {
     if (!fixtureSessions.has(workspace)) fixtureSessions.set(workspace, createFixtureService())
     return fixtureSessions.get(workspace)!
@@ -28,7 +28,10 @@ export function createDataService(baseUrl: string, fetcher?: typeof fetch, timeo
       if (mode === 'demo') return { service: 'demo', chain: 'demo', message: 'Demo data is ready. No live service is needed.' }
       return adaptConnection(await request('/health', 'GET', signal))
     },
-    async balances(mode: Mode, workspace: string, signal?: AbortSignal) { return mode === 'demo' ? fixture(workspace).balances() : adaptBalances(await request('/balances', 'GET', signal)) },
+    async balances(mode: Mode, _workspace: string, signal?: AbortSignal): Promise<BalanceSnapshot | null> {
+      if (mode === 'demo') return null  // demo shows balances from run result directly
+      return adaptBalances(await request('/balances', 'GET', signal))
+    },
     async run(mode: Mode, workspace: string, id: ScenarioId): Promise<RunResult> {
       getScenario(id)
       if (mode === 'demo') return fixture(workspace).run(id)
@@ -47,19 +50,26 @@ export function createDataService(baseUrl: string, fetcher?: typeof fetch, timeo
         result.before = before
         const proposal = asObject(raw).proposal_id
         if (id !== 'C' && typeof proposal === 'string' && /^[A-Za-z0-9_-]+$/.test(proposal)) {
-          try { result.approved = adaptPlan(await request(`/manifest/${encodeURIComponent(proposal)}`)); if (id === 'A') result.submitted = { ...result.approved } } catch { /* Unknown action stays explicitly unavailable. */ }
+          try { result.approved = adaptApprovedAction(await request(`/manifest/${encodeURIComponent(proposal)}`)) } catch { /* Unknown action stays explicitly unavailable. */ }
         }
         try { result.after = adaptBalances(await request('/balances')) } catch { result.after = null }
         // Only evidence fields are retained; errors, secrets and arbitrary response text are excluded.
         const data = asObject(raw)
-        evidence.set(result.id, { scenario: id, proposal_id: proposal, verdict: data.verdict, execution_result: data.execution_result, state_deltas: data.state_deltas, balances_verified: data.balances_verified, slot_verified: data.slot_verified })
+        evidence.set(result.id, {
+          scenario: id, proposal_id: proposal, verdict: data.verdict,
+          execution_result: data.execution_result, diffs: data.diffs, rules: data.rules,
+          attestation: data.attestation,
+        })
         return result
       } catch (error) {
         if (submitted) { uncertain = true; setPending(true) }
         throw error
       } finally { liveBusy = false }
     },
-    async reset(mode: Mode, workspace: string): Promise<Balances | RunResult> { if (mode === 'demo') return fixture(workspace).reset(); return service.run('live', workspace, 'C') },
+    async reset(mode: Mode, workspace: string): Promise<RunResult> {
+      if (mode === 'demo') return fixture(workspace).reset()
+      return service.run('live', workspace, 'C')
+    },
     technicalEvidence: (runId: string) => structuredClone(evidence.get(runId) ?? {}),
     liveOperationPending: () => liveBusy || uncertain,
   }

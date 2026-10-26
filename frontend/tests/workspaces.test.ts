@@ -61,7 +61,8 @@ test('progress and completion stay with their original workspace after switching
   result.reason = 'Changed by consumer'
   assert.equal(state.activeId, 'other')
   assert.equal(state.items[0].phase, 'completed')
-  assert.equal(state.items[0].result!.outcome, 'blocked')
+  // New type: verdict instead of outcome
+  assert.equal(state.items[0].result!.verdict, 'MISMATCH')
   assert.notEqual(state.items[0].result!.reason, result.reason)
   assert.equal(state.items[1].result, null)
 })
