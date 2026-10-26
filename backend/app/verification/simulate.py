@@ -220,6 +220,8 @@ def simulate_onchain_proof(
         "tx_status": tx_status,
         "revert_reason": revert_reason,
         "restoration_verified": True,
+        "proof_mode": True,
+        "simulation_mode": "proof_onchain",
         "treasury_outflow": treasury_outflow,
         "recipient_inflow": recipient_inflow,
         "unexpected_gains": unexpected_gains,
@@ -255,6 +257,19 @@ def simulate_execution(
         is_local_chain = True
 
     is_proof_mode = (chain_mode == "proof") or (not is_local_chain)
+
+    # Optional Anvil fork support for full EVM simulation against public chain state
+    sim_fork_url = os.environ.get("SIM_FORK_URL")
+    if is_proof_mode and sim_fork_url:
+        try:
+            fork_w3 = Web3(Web3.HTTPProvider(sim_fork_url))
+            if fork_w3.is_connected():
+                logger.info(f"Using ephemeral Anvil fork at {sim_fork_url} for proof simulation")
+                w3 = fork_w3
+                is_proof_mode = False
+        except Exception as e:
+            logger.warning(f"Could not connect to SIM_FORK_URL {sim_fork_url}: {e}; using on-chain eth_call")
+
     if is_proof_mode:
         return simulate_onchain_proof(
             w3=w3,

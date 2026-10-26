@@ -3,8 +3,9 @@
 import json
 import logging
 import os
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel
@@ -43,6 +44,13 @@ from app.chain.client import (
     proposal_id_to_bytes32,
 )
 from app.chain.attest import compute_action_hash, recover_attestation_signer, VERIFIED
+from app.chain.public import call_with_rpc_retry
+from app.paths import (
+    DEPLOYMENTS_LOCAL_PATH,
+    DEPLOYMENTS_PROOF_PATH,
+    DRYRUN_JSON_PATH,
+    PROOF_JSON_PATH,
+)
 from app.verification.verify import verify_proposal_transaction, VERDICT_VERIFIED
 from eth_account import Account
 from web3 import Web3
@@ -50,6 +58,17 @@ from web3 import Web3
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# In-memory short caches (5s TTL) for read RPC endpoints
+_CHAIN_STATUS_CACHE: Dict[Tuple[str, str], Tuple[float, Dict[str, Any]]] = {}
+_CHAIN_BALANCES_CACHE: Dict[Tuple[str, str], Tuple[float, Dict[str, Any]]] = {}
+_CACHE_TTL_SECONDS = 5.0
+
+
+def reset_chain_cache() -> None:
+    """Clear in-memory chain status and balance caches (used for tests)."""
+    _CHAIN_STATUS_CACHE.clear()
+    _CHAIN_BALANCES_CACHE.clear()
 
 # Global router instance, can be overridden in tests
 _llm_router: Optional[LLMRouter] = None
@@ -1278,35 +1297,72 @@ def get_proof_endpoint() -> Dict[str, Any]:
     """Read and return public testnet proof artifact from docs/proof.json.
 
     If proof.json is missing or empty, returns published=False with a clear message.
+    If proof.json chain ID does not match the connected RPC chain ID, returns published=False.
+    Always includes dryrun preview object if docs/dryrun.json exists.
     """
-    from pathlib import Path
-    repo_root = Path(__file__).resolve().parents[3]
-    proof_path = repo_root / "docs" / "proof.json"
-    if not proof_path.exists():
+    chain_mode = os.environ.get("CHAIN_MODE", "").lower()
+    rpc_url = (os.environ.get("AMOY_RPC") or os.environ.get("RPC_URL_PROOF")) if chain_mode == "proof" else os.environ.get("RPC_URL", "http://127.0.0.1:8545")
+    w3 = get_web3(rpc_url)
+    connected_chain_id: Optional[int] = None
+    if w3.is_connected():
+        try:
+            connected_chain_id = call_with_rpc_retry(lambda: w3.eth.chain_id)
+        except Exception:
+            pass
+
+    dryrun_data: Optional[Dict[str, Any]] = None
+    if DRYRUN_JSON_PATH.exists():
+        try:
+            with open(DRYRUN_JSON_PATH, "r", encoding="utf-8") as f:
+                dryrun_data = json.load(f)
+        except Exception as e:
+            logger.warning(f"Error reading docs/dryrun.json: {e}")
+
+    if not PROOF_JSON_PATH.exists():
         return {
             "published": False,
-            "chain_id": None,
+            "chain_id": connected_chain_id,
             "run_id": None,
             "pid": None,
             "contracts": {},
             "transactions": [],
+            "dryrun": dryrun_data,
             "message": "No proof published yet. Run scripts/publish_proof.py to broadcast and publish proof.",
         }
+
     try:
-        with open(proof_path, "r", encoding="utf-8") as f:
+        with open(PROOF_JSON_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         if not data or not isinstance(data, dict):
             return {
                 "published": False,
-                "chain_id": None,
+                "chain_id": connected_chain_id,
                 "run_id": None,
                 "pid": None,
                 "contracts": {},
                 "transactions": [],
+                "dryrun": dryrun_data,
                 "message": "Proof file is empty or invalid.",
             }
+
+        file_chain_id = data.get("chain_id")
+        if connected_chain_id is not None and file_chain_id is not None:
+            if int(connected_chain_id) != int(file_chain_id):
+                return {
+                    "published": False,
+                    "chain_id": connected_chain_id,
+                    "proof_chain_id": file_chain_id,
+                    "run_id": data.get("run_id"),
+                    "pid": data.get("pid"),
+                    "contracts": {},
+                    "transactions": [],
+                    "dryrun": dryrun_data,
+                    "message": f"Found proof for chain {file_chain_id}, but connected to {connected_chain_id}. Run scripts/publish_proof.py on this network.",
+                }
+
         return {
             "published": True,
+            "dryrun": dryrun_data,
             **data,
             "message": "Proof loaded successfully.",
         }
@@ -1314,11 +1370,12 @@ def get_proof_endpoint() -> Dict[str, Any]:
         logger.warning(f"Error reading docs/proof.json: {e}")
         return {
             "published": False,
-            "chain_id": None,
+            "chain_id": connected_chain_id,
             "run_id": None,
             "pid": None,
             "contracts": {},
             "transactions": [],
+            "dryrun": dryrun_data,
             "message": f"Error reading proof file: {e}",
         }
 
@@ -1327,9 +1384,15 @@ def get_proof_endpoint() -> Dict[str, Any]:
 def get_chain_status_endpoint() -> Dict[str, Any]:
     """Return live status of the connected blockchain and deployed contract addresses."""
     chain_mode = os.environ.get("CHAIN_MODE", "").lower()
-    repo_root = Path(__file__).resolve().parents[3]
-
     rpc_url = (os.environ.get("AMOY_RPC") or os.environ.get("RPC_URL_PROOF")) if chain_mode == "proof" else os.environ.get("RPC_URL", "http://127.0.0.1:8545")
+
+    cache_key = (chain_mode, rpc_url)
+    now = time.time()
+    if cache_key in _CHAIN_STATUS_CACHE:
+        cached_time, cached_val = _CHAIN_STATUS_CACHE[cache_key]
+        if now - cached_time < _CACHE_TTL_SECONDS:
+            return cached_val
+
     w3 = get_web3(rpc_url)
     connected = w3.is_connected()
 
@@ -1338,19 +1401,16 @@ def get_chain_status_endpoint() -> Dict[str, Any]:
     rpc_health = "disconnected"
     if connected:
         try:
-            chain_id = w3.eth.chain_id
-            latest_block = w3.eth.block_number
+            chain_id = call_with_rpc_retry(lambda: w3.eth.chain_id)
+            latest_block = call_with_rpc_retry(lambda: w3.eth.block_number)
             rpc_health = "healthy"
         except Exception:
             rpc_health = "degraded"
 
     contracts: Dict[str, str] = {}
-    proof_deployments = repo_root / "data" / "deployments.proof.json"
-    local_deployments = repo_root / "data" / "deployments.json"
-
-    if (chain_mode == "proof" or (chain_id and chain_id not in {31337, 1337})) and proof_deployments.exists():
+    if (chain_mode == "proof" or (chain_id and chain_id not in {31337, 1337})) and DEPLOYMENTS_PROOF_PATH.exists():
         try:
-            with open(proof_deployments, "r", encoding="utf-8") as f:
+            with open(DEPLOYMENTS_PROOF_PATH, "r", encoding="utf-8") as f:
                 d = json.load(f)
                 contracts = {
                     "token": d.get("token", ""),
@@ -1360,9 +1420,9 @@ def get_chain_status_endpoint() -> Dict[str, Any]:
                 }
         except Exception:
             pass
-    elif local_deployments.exists():
+    elif DEPLOYMENTS_LOCAL_PATH.exists():
         try:
-            with open(local_deployments, "r", encoding="utf-8") as f:
+            with open(DEPLOYMENTS_LOCAL_PATH, "r", encoding="utf-8") as f:
                 d = json.load(f)
                 contracts = {
                     "token": d.get("token", ""),
@@ -1374,10 +1434,9 @@ def get_chain_status_endpoint() -> Dict[str, Any]:
             pass
 
     if not contracts.get("token"):
-        doc_proof = repo_root / "docs" / "proof.json"
-        if doc_proof.exists():
+        if PROOF_JSON_PATH.exists():
             try:
-                with open(doc_proof, "r", encoding="utf-8") as f:
+                with open(PROOF_JSON_PATH, "r", encoding="utf-8") as f:
                     d = json.load(f)
                     c_map = d.get("contracts", {})
                     contracts = {
@@ -1390,24 +1449,40 @@ def get_chain_status_endpoint() -> Dict[str, Any]:
     from app.chain.public import get_explorer_base
     explorer_base = get_explorer_base(chain_id or 31337)
 
-    return {
+    contracts_deployed = bool(
+        contracts.get("token")
+        and contracts.get("registry")
+        and contracts.get("treasury")
+        and contracts.get("executor")
+    )
+
+    result = {
         "chain_id": chain_id,
         "latest_block": latest_block,
         "rpc_connected": connected,
         "rpc_health": rpc_health,
         "chain_mode": "proof" if (chain_mode == "proof" or (chain_id and chain_id not in {31337, 1337})) else "local",
+        "contracts_deployed": contracts_deployed,
         "contract_addresses": contracts,
         "explorer_base": explorer_base,
     }
+    _CHAIN_STATUS_CACHE[cache_key] = (now, result)
+    return result
 
 
 @router.get("/chain/balances", response_model=Dict[str, Any])
 def get_chain_balances_endpoint() -> Dict[str, Any]:
     """Return live native ETH balances for core protocol roles and treasury token balance."""
     chain_mode = os.environ.get("CHAIN_MODE", "").lower()
-    repo_root = Path(__file__).resolve().parents[3]
-
     rpc_url = (os.environ.get("AMOY_RPC") or os.environ.get("RPC_URL_PROOF")) if chain_mode == "proof" else os.environ.get("RPC_URL", "http://127.0.0.1:8545")
+
+    cache_key = (chain_mode, rpc_url)
+    now = time.time()
+    if cache_key in _CHAIN_BALANCES_CACHE:
+        cached_time, cached_val = _CHAIN_BALANCES_CACHE[cache_key]
+        if now - cached_time < _CACHE_TTL_SECONDS:
+            return cached_val
+
     w3 = get_web3(rpc_url)
     if not w3.is_connected():
         raise HTTPException(
@@ -1415,7 +1490,14 @@ def get_chain_balances_endpoint() -> Dict[str, Any]:
             detail="Cannot connect to blockchain node",
         )
 
-    chain_id = w3.eth.chain_id
+    try:
+        chain_id = call_with_rpc_retry(lambda: w3.eth.chain_id)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"RPC unavailable or rate-limited: {e}",
+        ) from e
+
     is_proof = (chain_mode == "proof") or (chain_id not in {31337, 1337})
 
     role_addresses: Dict[str, str] = {}
@@ -1447,7 +1529,7 @@ def get_chain_balances_endpoint() -> Dict[str, Any]:
     for role, addr in role_addresses.items():
         if addr:
             try:
-                bal_wei = w3.eth.get_balance(Web3.to_checksum_address(addr))
+                bal_wei = call_with_rpc_retry(lambda: w3.eth.get_balance(Web3.to_checksum_address(addr)))
                 roles_balances[role] = {
                     "address": addr,
                     "balance_wei": bal_wei,
@@ -1460,9 +1542,7 @@ def get_chain_balances_endpoint() -> Dict[str, Any]:
 
     treasury_addr = ""
     token_addr = ""
-    proof_deployments = repo_root / "data" / "deployments.proof.json"
-    local_deployments = repo_root / "data" / "deployments.json"
-    deploy_file = proof_deployments if is_proof and proof_deployments.exists() else local_deployments
+    deploy_file = DEPLOYMENTS_PROOF_PATH if is_proof and DEPLOYMENTS_PROOF_PATH.exists() else DEPLOYMENTS_LOCAL_PATH
 
     if deploy_file.exists():
         try:
@@ -1474,10 +1554,9 @@ def get_chain_balances_endpoint() -> Dict[str, Any]:
             pass
 
     if not treasury_addr:
-        doc_proof = repo_root / "docs" / "proof.json"
-        if doc_proof.exists():
+        if PROOF_JSON_PATH.exists():
             try:
-                with open(doc_proof, "r", encoding="utf-8") as f:
+                with open(PROOF_JSON_PATH, "r", encoding="utf-8") as f:
                     d = json.load(f)
                     c_map = d.get("contracts", {})
                     treasury_entry = c_map.get("treasury", {})
@@ -1492,12 +1571,12 @@ def get_chain_balances_endpoint() -> Dict[str, Any]:
     if treasury_addr:
         try:
             t_cs = Web3.to_checksum_address(treasury_addr)
-            raw_t_eth = w3.eth.get_balance(t_cs)
+            raw_t_eth = call_with_rpc_retry(lambda: w3.eth.get_balance(t_cs))
             treasury_eth = float(Web3.from_wei(raw_t_eth, "ether")) if isinstance(raw_t_eth, (int, float)) else 0.0
             if token_addr:
                 mock_token_artifact = load_artifact("MockToken")
                 token_contract = w3.eth.contract(address=Web3.to_checksum_address(token_addr), abi=mock_token_artifact["abi"])
-                raw_bal = token_contract.functions.balanceOf(t_cs).call()
+                raw_bal = call_with_rpc_retry(lambda: token_contract.functions.balanceOf(t_cs).call())
                 treasury_token_bal = int(raw_bal) if isinstance(raw_bal, (int, float)) else 0
         except Exception as e:
             logger.warning(f"Error querying treasury balances: {e}")
@@ -1507,7 +1586,7 @@ def get_chain_balances_endpoint() -> Dict[str, Any]:
     except Exception:
         token_display = "0.00 USDC"
 
-    return {
+    result = {
         "chain_id": chain_id,
         "chain_mode": "proof" if is_proof else "local",
         "roles": roles_balances,
@@ -1518,6 +1597,8 @@ def get_chain_balances_endpoint() -> Dict[str, Any]:
             "token_balance_display": token_display,
         },
     }
+    _CHAIN_BALANCES_CACHE[cache_key] = (now, result)
+    return result
 
 
 @router.get("/chain/txs", response_model=List[Dict[str, Any]])

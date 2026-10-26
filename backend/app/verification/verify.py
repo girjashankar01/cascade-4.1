@@ -256,13 +256,16 @@ def evaluate_rules(
     # ----------------------------------------------------
     # Rule R4: Unexpected balance increases
     # ----------------------------------------------------
+    is_proof = sim_result.get("proof_mode", False) or sim_result.get("simulation_mode") == "proof_onchain"
+    r4_prefix = "[REDUCED IN PROOF MODE] Evaluated via static calldata & view calls without full EVM state tracing. " if is_proof else ""
+
     unexpected_gains = sim_result.get("unexpected_gains", {})
     r4_pass = len(unexpected_gains) == 0
     r4_status = "PASS" if r4_pass else "FAIL"
     r4_expl = (
-        "Zero unexpected token balance increases observed across watched addresses."
+        r4_prefix + "Zero unexpected token balance increases observed across watched addresses."
         if r4_pass
-        else f"Unexpected token gains detected: {unexpected_gains}"
+        else r4_prefix + f"Unexpected token gains detected: {unexpected_gains}"
     )
     rules.append(
         RuleOutcome(
@@ -281,10 +284,11 @@ def evaluate_rules(
     allowance_changes = sim_result.get("allowance_changes", {})
     r5_pass = allow_approvals or len(allowance_changes) == 0
     r5_status = "PASS" if r5_pass else "FAIL"
+    r5_prefix = "[REDUCED IN PROOF MODE] Evaluated via static calldata & view calls without full EVM state tracing. " if is_proof else ""
     r5_expl = (
-        "Treasury allowances remained strictly unchanged."
+        r5_prefix + "Treasury allowances remained strictly unchanged."
         if r5_pass
-        else f"Unauthorized allowance changes detected: {allowance_changes}"
+        else r5_prefix + f"Unauthorized allowance changes detected: {allowance_changes}"
     )
     rules.append(
         RuleOutcome(
@@ -440,10 +444,11 @@ def evaluate_rules(
     owner_changes = sim_result.get("owner_changes", {})
     r9_pass = allow_role_changes or len(owner_changes) == 0
     r9_status = "PASS" if r9_pass else "FAIL"
+    r9_prefix = "[REDUCED IN PROOF MODE] Evaluated via static calldata & view calls without full EVM state tracing. " if is_proof else ""
     r9_expl = (
-        "Contract ownership and access roles remained unchanged."
+        r9_prefix + "Contract ownership and access roles remained unchanged."
         if r9_pass
-        else f"Unauthorized role changes detected: {owner_changes}"
+        else r9_prefix + f"Unauthorized role changes detected: {owner_changes}"
     )
     rules.append(
         RuleOutcome(

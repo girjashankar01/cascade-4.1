@@ -4,12 +4,14 @@ Isolated from local Anvil flows. Targets public EVM testnets (e.g. Polygon Amoy,
 """
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 import logging
 import os
 from pathlib import Path
 import re
 import threading
-from typing import Any, Dict, Optional, Union
+import time
+from typing import Any, Dict, List, Optional, Union
 
 import eth_abi
 from eth_account import Account
@@ -18,6 +20,35 @@ from web3 import Web3
 from web3.exceptions import ContractLogicError
 
 logger = logging.getLogger("chain_public")
+
+
+def parse_priority_fee_wei(val: Union[str, float, int, Decimal, None]) -> int:
+    """Parse priority fee from Gwei string, float or Decimal to exact Wei integer.
+
+    Accepts decimal values (e.g. 0.0001, 25.5).
+    """
+    if val is None or str(val).strip() == "":
+        return 0
+    try:
+        d = Decimal(str(val).strip())
+        return int(d * Decimal(10**9))
+    except Exception as e:
+        logger.warning(f"Invalid priority fee '{val}': {e}; using 0 wei")
+        return 0
+
+
+def call_with_rpc_retry(fn, max_retries: int = 3, base_delay: float = 1.0) -> Any:
+    """Execute Web3 RPC read call with exponential backoff on HTTP 429 or transient timeouts."""
+    for attempt in range(max_retries + 1):
+        try:
+            return fn()
+        except Exception as exc:
+            err_str = str(exc).lower()
+            is_transient = "429" in err_str or "rate limit" in err_str or "timeout" in err_str or "connection" in err_str
+            if is_transient and attempt < max_retries:
+                time.sleep(base_delay * (2 ** attempt))
+                continue
+            raise
 
 # In-memory per-address nonce tracker to prevent collisions on rapid back-to-back submissions
 _NONCE_LOCK = threading.Lock()
@@ -216,7 +247,7 @@ def send_tx_1559(
 
     # Calculate base fees and tip
     env_p_gwei = os.environ.get("PRIORITY_FEE_GWEI")
-    configured_tip_wei = Web3.to_wei(float(env_p_gwei), "gwei") if env_p_gwei else 0
+    configured_tip_wei = parse_priority_fee_wei(env_p_gwei)
 
     try:
         node_tip_wei = w3.eth.max_priority_fee
@@ -283,6 +314,19 @@ def send_tx_1559(
 
             signed = w3.eth.account.sign_transaction(tx, private_key)
             tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        elif expect_revert:
+            logger.warning(f"Transaction rejected by node before mempool/mining: {exc}")
+            reason = str(exc)
+            if "execution reverted:" in err_msg:
+                reason = err_msg.split("execution reverted:")[-1].strip().strip("'\"")
+            return {
+                "tx_hash": None,
+                "status": 0,
+                "block_number": None,
+                "receipt": None,
+                "revert_reason": reason,
+                "node_rejected_before_mining": True,
+            }
         else:
             raise
 
@@ -296,14 +340,17 @@ def send_tx_1559(
         "status": int(receipt.status),
         "block_number": int(receipt.blockNumber),
         "receipt": receipt,
+        "revert_reason": None,
     }
 
-    if receipt.status == 0 and not expect_revert:
+    if receipt.status == 0:
         reason = revert_reason(w3, hex_hash)
-        raise RuntimeError(
-            f"Transaction {hex_hash} mined with failure status 0 at block {receipt.blockNumber}. "
-            f"Revert reason: {reason}"
-        )
+        res["revert_reason"] = reason
+        if not expect_revert:
+            raise RuntimeError(
+                f"Transaction {hex_hash} mined with failure status 0 at block {receipt.blockNumber}. "
+                f"Revert reason: {reason}"
+            )
 
     return res
 
