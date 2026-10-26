@@ -6,7 +6,10 @@ import { useTheme } from './app/theme'
 import { useWorkspaces } from './app/workspace-context'
 import { WorkbenchShell } from './components/layout/WorkbenchShell'
 import { WorkbenchPage } from './pages/WorkbenchPage'
-import { WorkspacePage } from './pages/WorkspacePage'
+import { PaymentRequestPage } from './pages/PaymentRequestPage'
+import { ApprovedPlanPage } from './pages/ApprovedPlanPage'
+import { RecordPage } from './pages/RecordPage'
+import { CoveragePage } from './pages/CoveragePage'
 
 const StyleTile = import.meta.env.DEV ? lazy(() => import('./pages/StyleTilePage').then(module => ({ default: module.StyleTilePage }))) : null
 
@@ -26,15 +29,47 @@ function PreferenceUrlSync() {
 function RootRedirect() { const location = useLocation(); return <Navigate to={`/app${location.search}`} replace /> }
 
 function App() {
-  return <BrowserRouter><ThemeProvider defaultTheme="light"><WorkspaceProvider><PreferenceUrlSync /><Routes>
-    <Route path="/" element={<RootRedirect />} />
-    <Route path="/app" element={<WorkbenchShell />}>
-      <Route index element={<WorkbenchPage />} />
-      {['payment-request', 'approved-plan', 'record', 'coverage'].map(path => <Route key={path} path={path} element={<WorkspacePage />} />)}
-    </Route>
-    <Route path="/style-tile" element={StyleTile ? <Suspense fallback={<main className="route-feedback">Opening design foundations…</main>}><StyleTile /></Suspense> : <Navigate to="/app" replace />} />
-    <Route path="*" element={<main className="route-feedback"><h1>This page is not available.</h1><p>Your workspaces are still here.</p><Link to="/app">Return to the workbench</Link></main>} />
-  </Routes></WorkspaceProvider></ThemeProvider></BrowserRouter>
+  return (
+    <BrowserRouter>
+      <ThemeProvider defaultTheme="light">
+        <WorkspaceProvider>
+          <PreferenceUrlSync />
+          <Routes>
+            <Route path="/" element={<RootRedirect />} />
+            <Route path="/app" element={<WorkbenchShell />}>
+              <Route index element={<WorkbenchPage />} />
+              <Route path="payment-request" element={<PaymentRequestPage />} />
+              <Route path="approved-plan" element={<ApprovedPlanPage />} />
+              <Route path="record" element={<RecordPage />} />
+              <Route path="coverage" element={<CoveragePage />} />
+            </Route>
+            <Route
+              path="/style-tile"
+              element={
+                StyleTile ? (
+                  <Suspense fallback={<main className="route-feedback">Opening design foundations…</main>}>
+                    <StyleTile />
+                  </Suspense>
+                ) : (
+                  <Navigate to="/app" replace />
+                )
+              }
+            />
+            <Route
+              path="*"
+              element={
+                <main className="route-feedback">
+                  <h1>This page is not available.</h1>
+                  <p>Your workspaces are still here.</p>
+                  <Link to="/app">Return to the workbench</Link>
+                </main>
+              }
+            />
+          </Routes>
+        </WorkspaceProvider>
+      </ThemeProvider>
+    </BrowserRouter>
+  )
 }
 
 export default App

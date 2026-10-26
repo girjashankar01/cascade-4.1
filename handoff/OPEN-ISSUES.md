@@ -20,4 +20,4 @@ _Maintained by the independent reviewer. Updated after each stage review and eac
 - **Status values:** `OPEN` · `FIXED` · `NOT FIXED` · `PARTIALLY FIXED` · `NEEDS HUMAN DECISION` · `WITHDRAWN`
 - An issue is only closed after the reviewer has **personally re-verified** the fix.
 - BLOCKER or MAJOR open = stage verdict is FAIL.
-- Currently, **0 OPEN issues** across all completed stages (Stage 0, Stage 1, Stage 2, Stage 3).
+- Currently, **0 OPEN issues** across all completed stages (Stage 0, Stage 1, Stage 2, Stage 3, Stage 4).

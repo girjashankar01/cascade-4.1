@@ -9,7 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.tests.json",
-    "test": "node --test tests/data.test.ts tests/workspaces.test.ts",
+    "test": "node --test tests/data.test.ts tests/workspaces.test.ts tests/pages.test.ts",
     "check:contrast": "node scripts/check-contrast.mjs"
   },
   "dependencies": {
