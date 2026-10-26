@@ -5,4 +5,16 @@ libs = ["lib"]
 solc = "0.8.30"
 remappings = ["@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/"]
 
+[rpc_endpoints]
+proof = "${AMOY_RPC}"
+sepolia = "${AMOY_RPC}"
+
+[etherscan]
+80002 = { key = "${EXPLORER_API_KEY}", url = "https://api-amoy.polygonscan.com/api" }
+amoy = { key = "${EXPLORER_API_KEY}", url = "https://api-amoy.polygonscan.com/api" }
+84532 = { key = "${EXPLORER_API_KEY}", url = "https://api-sepolia.basescan.org/api" }
+base-sepolia = { key = "${EXPLORER_API_KEY}", url = "https://api-sepolia.basescan.org/api" }
+11155111 = { key = "${EXPLORER_API_KEY}", url = "https://api-sepolia.etherscan.io/api" }
+sepolia = { key = "${EXPLORER_API_KEY}", url = "https://api-sepolia.etherscan.io/api" }
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

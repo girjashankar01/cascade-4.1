@@ -1,0 +1,108 @@
+/* Signature Visual Feature: Animated Technical Grid with Travelling Lines */
+
+.technical-background {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+  background-color: var(--bg-app);
+}
+
+/* Base Technical Square Grid */
+.technical-grid {
+  position: absolute;
+  inset: 0;
+  background-image: 
+    linear-gradient(to right, rgba(180, 195, 215, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(180, 195, 215, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: center top;
+}
+
+/* Subtle Radial Illumination around top workbench area */
+.technical-radial-glow {
+  position: absolute;
+  top: -100px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1000px;
+  height: 600px;
+  background: radial-gradient(ellipse 600px 350px at 50% 30%, rgba(124, 224, 190, 0.045), transparent 70%);
+  opacity: 0.8;
+}
+
+/* Vignette Mask fading grid out towards the edges and bottom */
+.technical-mask {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 40%, transparent 40%, var(--bg-app) 95%);
+}
+
+/* Travelling Lines Layer */
+.travelling-lines {
+  position: absolute;
+  inset: 0;
+}
+
+.travelling-line-h {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(124, 224, 190, 0.0) 30%, 
+    rgba(124, 224, 190, 0.35) 50%, 
+    rgba(124, 224, 190, 0.0) 70%, 
+    transparent 100%
+  );
+  background-size: 300px 1px;
+  background-repeat: no-repeat;
+  opacity: 0.6;
+  animation: travel-horizontal 12s infinite linear;
+}
+
+.line-h1 { top: 96px; animation-duration: 14s; animation-delay: 0s; }
+.line-h2 { top: 288px; animation-duration: 18s; animation-delay: 4s; }
+.line-h3 { top: 576px; animation-duration: 22s; animation-delay: 9s; opacity: 0.3; }
+
+.travelling-line-v {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, 
+    transparent 0%, 
+    rgba(124, 224, 190, 0.0) 30%, 
+    rgba(124, 224, 190, 0.3) 50%, 
+    rgba(124, 224, 190, 0.0) 70%, 
+    transparent 100%
+  );
+  background-size: 1px 300px;
+  background-repeat: no-repeat;
+  opacity: 0.5;
+  animation: travel-vertical 14s infinite linear;
+}
+
+.line-v1 { left: calc(50% - 384px); animation-duration: 16s; animation-delay: 1s; }
+.line-v2 { left: calc(50% + 288px); animation-duration: 20s; animation-delay: 6s; }
+
+@keyframes travel-horizontal {
+  0% { background-position: -300px 0; }
+  100% { background-position: calc(100vw + 300px) 0; }
+}
+
+@keyframes travel-vertical {
+  0% { background-position: 0 -300px; }
+  100% { background-position: 0 calc(100vh + 300px); }
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .travelling-line-h,
+  .travelling-line-v {
+    animation: none;
+    display: none;
+  }
+}

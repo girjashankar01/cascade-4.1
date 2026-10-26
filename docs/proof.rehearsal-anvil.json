@@ -1,0 +1,79 @@
+{
+  "chain_id": 31337,
+  "run_id": "e2e01",
+  "pid": "PROP-PROOF-e2e01",
+  "pid_b32": "0x9ccf556a8365ec00522ea5a5e032ea866e52a4ab05cd72acb32f4760d1e11664",
+  "versionHash": "0x923d00a0a2c8df3ab485e9ddd76ade891ced412793b7540605a37ad27b4e7a9a",
+  "actionHash": "0x4eb08e2ca6a42ffca108b5e30fef632d2cff96531406a3a9cb9614481ea696e2",
+  "evidenceRoot": "0xfed1b9d9685e793fc39c0e25a8f6fed692efdc659231ccf7f90a60aa259dbe65",
+  "contracts": {
+    "token": {
+      "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "explorer_url": "https://etherscan.io/address/0x5FbDB2315678afecb367f032d93F642f64180aa3"
+    },
+    "registry": {
+      "address": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "explorer_url": "https://etherscan.io/address/0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+    },
+    "treasury": {
+      "address": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "explorer_url": "https://etherscan.io/address/0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+    },
+    "executor": {
+      "address": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
+      "explorer_url": "https://etherscan.io/address/0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
+    }
+  },
+  "transactions": [
+    {
+      "step": "commit_version",
+      "label": "Proposer commits version on GovernanceRegistry",
+      "tx_hash": "0x01f54b4497f4f07bff82d6e199b2ee5e2bf578a4707270d7bba3f9d903662391",
+      "block_number": 7,
+      "status": 1,
+      "explorer_url": "https://etherscan.io/tx/0x01f54b4497f4f07bff82d6e199b2ee5e2bf578a4707270d7bba3f9d903662391",
+      "revert_reason": null,
+      "expected": "success (status 1)"
+    },
+    {
+      "step": "approve",
+      "label": "Governance approves latest version on GovernanceRegistry",
+      "tx_hash": "0xece05d21fdb9e4bf64f602aefe4e956d3ec58c0ea6cd6b0dbf8bc606489bdfe0",
+      "block_number": 8,
+      "status": 1,
+      "explorer_url": "https://etherscan.io/tx/0xece05d21fdb9e4bf64f602aefe4e956d3ec58c0ea6cd6b0dbf8bc606489bdfe0",
+      "revert_reason": null,
+      "expected": "success (status 1)"
+    },
+    {
+      "step": "b1_adversarial_execute",
+      "label": "B1 Adversarial Substitution Blocked (action mismatch)",
+      "tx_hash": "0x363b08de8dd2d2ab52109a39b9ba494c5e71f2b40781566fc52fc7af6a597149",
+      "block_number": 9,
+      "status": 0,
+      "explorer_url": "https://etherscan.io/tx/0x363b08de8dd2d2ab52109a39b9ba494c5e71f2b40781566fc52fc7af6a597149",
+      "revert_reason": "action mismatch",
+      "expected": "revert (action mismatch)"
+    },
+    {
+      "step": "valid_execute",
+      "label": "Valid Guarded Execution (1,000,000 USDC Payout)",
+      "tx_hash": "0x917c380badb136dfc9fc160ff27f3e7bbb9803f76f976adc7286ab8d4d1bbff0",
+      "block_number": 10,
+      "status": 1,
+      "explorer_url": "https://etherscan.io/tx/0x917c380badb136dfc9fc160ff27f3e7bbb9803f76f976adc7286ab8d4d1bbff0",
+      "revert_reason": null,
+      "expected": "success (status 1)"
+    },
+    {
+      "step": "replay_execute",
+      "label": "Replay Attempt Blocked (already executed)",
+      "tx_hash": "0xb7b0b8e360139768e7a185cd42558e8f8caae5430bd8986544d21ea180ac8987",
+      "block_number": 11,
+      "status": 0,
+      "explorer_url": "https://etherscan.io/tx/0xb7b0b8e360139768e7a185cd42558e8f8caae5430bd8986544d21ea180ac8987",
+      "revert_reason": "already executed",
+      "expected": "revert (already executed)"
+    }
+  ]
+}
