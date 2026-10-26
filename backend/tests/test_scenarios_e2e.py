@@ -73,8 +73,9 @@ def anvil_node() -> Generator[str, None, None]:
 
 
 @pytest.fixture
-def test_setup(anvil_node: str, tmp_path: Path):
+def test_setup(anvil_node: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db_file = tmp_path / "test_scenarios.db"
+    monkeypatch.setenv("DATABASE_PATH", str(db_file))
     db_path = str(db_file)
     init_db(db_path)
 

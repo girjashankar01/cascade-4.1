@@ -18,6 +18,7 @@ from app.chain.client import (
     PK_VERIFIER,
     get_onchain_approved,
     get_web3,
+    load_artifact,
     proposal_id_to_bytes32,
 )
 from app.db import get_db_connection
@@ -31,6 +32,8 @@ VERDICT_VERIFIED = "VERIFIED"
 VERDICT_MISMATCH = "MISMATCH"
 VERDICT_UNSUPPORTED = "UNSUPPORTED"
 VERDICT_UNCERTAIN = "UNCERTAIN"
+VERDICT_ALREADY_EXECUTED = "ALREADY_EXECUTED"
+STATUS_ALREADY_EXECUTED = "ALREADY_EXECUTED"
 
 
 @dataclass
@@ -59,12 +62,17 @@ class VerificationReport:
     deadline: Optional[int] = None
     verifier_address: Optional[str] = None
     error: Optional[str] = None
+    executed: bool = False
+    status: Optional[str] = None
+    tx_hash: Optional[str] = None
+    block_number: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "proposal_id": self.proposal_id,
             "version": self.version,
             "verdict": self.verdict,
+            "status": self.status or self.verdict,
             "all_passed": self.all_passed,
             "rules": [r.to_dict() for r in self.rules],
             "decoded_tx": self.decoded_tx,
@@ -74,6 +82,9 @@ class VerificationReport:
             "deadline": self.deadline,
             "verifier_address": self.verifier_address,
             "error": self.error,
+            "executed": self.executed,
+            "tx_hash": self.tx_hash,
+            "block_number": self.block_number,
         }
 
 
@@ -519,6 +530,85 @@ def verify_proposal_transaction(
 
     # 3. Read live on-chain approved record
     onchain_tuple = get_onchain_approved(registry_address, proposal_id, rpc_url=rpc_url)
+
+    # 3b. Check if already executed on-chain or in database BEFORE running simulation
+    pid_b32 = proposal_id_to_bytes32(proposal_id)
+    is_executed_onchain = False
+    executor_contract = None
+    if executor_address:
+        try:
+            executor_artifact = load_artifact("GuardedExecutor")
+            executor_contract = w3.eth.contract(
+                address=Web3.to_checksum_address(executor_address),
+                abi=executor_artifact["abi"],
+            )
+            is_executed_onchain = bool(executor_contract.functions.executed(pid_b32).call())
+        except Exception as e:
+            logger.debug(f"Could not query executor.executed on-chain: {e}")
+
+    orig_tx_hash = None
+    orig_block_number = None
+    db_executed = False
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT tx_hash, block_number, executed FROM verifications
+            WHERE proposal_id = ? AND executed = 1
+            ORDER BY rowid DESC LIMIT 1
+            """,
+            (proposal_id,),
+        )
+        exec_row = cursor.fetchone()
+        if exec_row:
+            db_executed = bool(exec_row["executed"])
+            orig_tx_hash = exec_row["tx_hash"]
+            orig_block_number = exec_row["block_number"]
+
+    # If executed on-chain but SQLite verifications table has no tx info, query ExecutionSucceeded event
+    if is_executed_onchain and (not orig_tx_hash or not orig_block_number) and executor_contract is not None:
+        try:
+            events = executor_contract.events.ExecutionSucceeded().get_logs(
+                from_block=0,
+                argument_filters={"proposalId": pid_b32},
+            )
+            if events:
+                orig_tx_hash = events[-1].transactionHash.hex()
+                orig_block_number = events[-1].blockNumber
+        except Exception as e:
+            logger.debug(f"Could not retrieve ExecutionSucceeded events: {e}")
+
+    if orig_tx_hash and not orig_tx_hash.startswith("0x"):
+        orig_tx_hash = "0x" + orig_tx_hash
+
+    if is_executed_onchain or db_executed:
+        logger.info(
+            f"Proposal '{proposal_id}' has already been executed on-chain (tx: {orig_tx_hash}, block: {orig_block_number}). "
+            f"Returning ALREADY_EXECUTED explicit result before simulation."
+        )
+        return VerificationReport(
+            proposal_id=proposal_id,
+            version=version,
+            verdict=STATUS_ALREADY_EXECUTED,
+            all_passed=False,
+            rules=[],
+            decoded_tx=decoded_tx.to_dict(),
+            diff=decoded_tx.diff,
+            simulation={
+                "success": True,
+                "status": STATUS_ALREADY_EXECUTED,
+                "skipped": True,
+                "message": f"Proposal '{proposal_id}' has already been executed on-chain; simulation skipped to prevent false outflow violation.",
+            },
+            attestation_sig=None,
+            deadline=None,
+            verifier_address=Account.from_key(verifier_private_key).address,
+            error=f"Proposal '{proposal_id}' has already been executed on-chain (replay blocked).",
+            executed=True,
+            status=STATUS_ALREADY_EXECUTED,
+            tx_hash=orig_tx_hash,
+            block_number=orig_block_number,
+        )
 
     # 4. EVM simulation
     try:

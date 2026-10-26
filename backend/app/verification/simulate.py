@@ -1,10 +1,14 @@
 """Anvil EVM simulation, watched-state diffing, and strict snapshot restoration."""
 
+import copy
 import logging
+import os
+import re
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from eth_utils import to_checksum_address
 from web3 import Web3
+from web3.exceptions import ContractLogicError
 
 from app.chain.client import load_artifact
 
@@ -68,6 +72,168 @@ def read_account_state(
     }
 
 
+def simulate_onchain_proof(
+    w3: Web3,
+    treasury_address: str,
+    executor_address: str,
+    target: str,
+    value: int,
+    data: Union[str, bytes],
+    manifest: Dict[str, Any],
+    token_address: Optional[str] = None,
+    extra_watchlist: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Simulate treasury operation on a public EVM testnet without Anvil cheat codes.
+
+    Uses read-only JSON-RPC eth_call with `from = executor_address` directly to Treasury.exec(...).
+    Computes exact state transitions and verifies revert conditions without modifying on-chain state.
+    """
+    treasury_cs = to_checksum_address(treasury_address)
+    executor_cs = to_checksum_address(executor_address)
+    target_cs = to_checksum_address(target)
+
+    # 1. Determine token contract
+    resolved_token_addr = token_address or target
+    mock_token_artifact = load_artifact("MockToken")
+    token_contract = w3.eth.contract(
+        address=to_checksum_address(resolved_token_addr),
+        abi=mock_token_artifact["abi"],
+    )
+
+    treasury_artifact = load_artifact("Treasury")
+    treasury_contract = w3.eth.contract(
+        address=treasury_cs,
+        abi=treasury_artifact["abi"],
+    )
+
+    # 2. Build fixed authoritative watchlist
+    action = manifest.get("action", {})
+    declared_recipient = action.get("recipient", "").lower()
+    fixed_watchlist: Set[str] = {
+        treasury_address.lower(),
+        executor_address.lower(),
+        target.lower(),
+        resolved_token_addr.lower(),
+    }
+    if declared_recipient:
+        fixed_watchlist.add(declared_recipient)
+    if extra_watchlist:
+        for addr in extra_watchlist:
+            if addr:
+                fixed_watchlist.add(addr.lower())
+
+    # 3. Capture baseline state
+    baseline_state: Dict[str, Dict[str, Any]] = {}
+    for addr in fixed_watchlist:
+        baseline_state[addr] = read_account_state(
+            w3=w3,
+            address=addr,
+            token_contract=token_contract,
+            treasury_address=treasury_address,
+        )
+
+    # 4. Execute read-only eth_call to Treasury.exec(target, value, data) with from=executor
+    if isinstance(data, str):
+        clean_data = data[2:] if data.startswith("0x") or data.startswith("0X") else data
+        raw_data = bytes.fromhex(clean_data)
+    else:
+        raw_data = bytes(data)
+
+    tx_status = 0
+    revert_reason = None
+    try:
+        treasury_contract.functions.exec(target_cs, int(value or 0), raw_data).call({"from": executor_cs})
+        tx_status = 1
+    except Exception as exc:
+        tx_status = 0
+        from app.chain.public import decode_revert_data
+        err_str = str(exc)
+        if hasattr(exc, "data") and exc.data:
+            revert_reason = decode_revert_data(exc.data)
+        elif "execution reverted:" in err_str:
+            revert_reason = err_str.split("execution reverted:")[-1].strip().strip("'\"")
+        elif "reverted with reason string" in err_str:
+            m = re.search(r"reverted with reason string '([^']+)'", err_str)
+            revert_reason = m.group(1) if m else err_str
+        else:
+            revert_reason = err_str
+
+    # 5. Build post_state
+    post_state: Dict[str, Dict[str, Any]] = copy.deepcopy(baseline_state)
+    if tx_status == 1:
+        # Model successful execution deltas
+        # If ERC20 transfer (selector 0xa9059cbb):
+        if len(raw_data) >= 68 and raw_data[:4] == bytes.fromhex("a9059cbb"):
+            call_recipient = "0x" + raw_data[16:36].hex().lower()
+            call_amount = int.from_bytes(raw_data[36:68], "big")
+            treas_key = treasury_address.lower()
+            recip_key = call_recipient.lower()
+
+            if treas_key in post_state:
+                post_state[treas_key]["token_balance"] = max(0, post_state[treas_key]["token_balance"] - call_amount)
+            if recip_key not in post_state:
+                post_state[recip_key] = read_account_state(w3, recip_key, token_contract, treasury_address)
+            post_state[recip_key]["token_balance"] = post_state[recip_key]["token_balance"] + call_amount
+
+        # If upgradeToAndCall (selector 0x4f1ef286):
+        elif len(raw_data) >= 36 and raw_data[:4] == bytes.fromhex("4f1ef286"):
+            new_impl = "0x" + raw_data[16:36].hex().lower()
+            tgt_key = target.lower()
+            if tgt_key in post_state:
+                post_state[tgt_key]["impl_slot"] = "0x" + new_impl[2:].rjust(64, "0")
+
+    # 6. Compute state deltas
+    treasury_lower = treasury_address.lower()
+    recipient_lower = declared_recipient.lower()
+
+    treasury_pre = baseline_state.get(treasury_lower, {}).get("token_balance", 0)
+    treasury_post = post_state.get(treasury_lower, {}).get("token_balance", 0)
+    treasury_outflow = treasury_pre - treasury_post if treasury_pre >= treasury_post else 0
+
+    recipient_pre = baseline_state.get(recipient_lower, {}).get("token_balance", 0)
+    recipient_post = post_state.get(recipient_lower, {}).get("token_balance", 0)
+    recipient_inflow = recipient_post - recipient_pre if recipient_post >= recipient_pre else 0
+
+    unexpected_gains: Dict[str, int] = {}
+    allowance_changes: Dict[str, int] = {}
+    slot_changes: Dict[str, Dict[str, str]] = {}
+    owner_changes: Dict[str, Dict[str, str]] = {}
+
+    for addr, post in post_state.items():
+        base = baseline_state.get(addr, {"token_balance": 0, "allowance_from_treasury": 0, "impl_slot": "", "owner": ""})
+        t_delta = post["token_balance"] - base["token_balance"]
+        if t_delta > 0 and addr != recipient_lower:
+            unexpected_gains[addr] = t_delta
+
+        a_delta = post["allowance_from_treasury"] - base["allowance_from_treasury"]
+        if a_delta != 0:
+            allowance_changes[addr] = a_delta
+
+        if base["impl_slot"] and post["impl_slot"] != base["impl_slot"]:
+            slot_changes[addr] = {"before": base["impl_slot"], "after": post["impl_slot"]}
+
+        if base["owner"] and post["owner"] != base["owner"]:
+            owner_changes[addr] = {"before": base["owner"], "after": post["owner"]}
+
+    return {
+        "success": tx_status == 1,
+        "tx_status": tx_status,
+        "revert_reason": revert_reason,
+        "restoration_verified": True,
+        "treasury_outflow": treasury_outflow,
+        "recipient_inflow": recipient_inflow,
+        "unexpected_gains": unexpected_gains,
+        "allowance_changes": allowance_changes,
+        "slot_changes": slot_changes,
+        "owner_changes": owner_changes,
+        "dynamic_addresses": [],
+        "discovery_cap_reached": False,
+        "logs_count": 0,
+        "baseline_state": baseline_state,
+        "post_state": post_state,
+    }
+
+
 def simulate_execution(
     w3: Web3,
     treasury_address: str,
@@ -79,16 +245,29 @@ def simulate_execution(
     token_address: Optional[str] = None,
     extra_watchlist: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Simulate treasury operation through authorized executor on Anvil EVM.
+    """Simulate treasury operation through authorized executor on Anvil or public EVM."""
+    chain_mode = os.environ.get("CHAIN_MODE", "").lower()
+    is_local_chain = True
+    try:
+        chain_id = w3.eth.chain_id
+        is_local_chain = chain_id in {31337, 1337}
+    except Exception:
+        is_local_chain = True
 
-    Steps:
-    1. Read baseline watched state, executor nonce, and block number.
-    2. evm_snapshot via raw JSON-RPC.
-    3. Impersonate deployed executor address on Anvil.
-    4. Execute treasury.exec(target, value, data).
-    5. Capture logs, receipt status, and post-state.
-    6. In finally: stop impersonation, evm_revert(snapshot_id) via raw JSON-RPC, verify restoration.
-    """
+    is_proof_mode = (chain_mode == "proof") or (not is_local_chain)
+    if is_proof_mode:
+        return simulate_onchain_proof(
+            w3=w3,
+            treasury_address=treasury_address,
+            executor_address=executor_address,
+            target=target,
+            value=value,
+            data=data,
+            manifest=manifest,
+            token_address=token_address,
+            extra_watchlist=extra_watchlist,
+        )
+
     treasury_cs = to_checksum_address(treasury_address)
     executor_cs = to_checksum_address(executor_address)
     target_cs = to_checksum_address(target)

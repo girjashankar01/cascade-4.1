@@ -223,7 +223,7 @@ def test_scenario_b1_cannot_bypass_execution_endpoint(client_env):
         "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65", 2_000_000 * 10**6
     ).hex()
 
-    dep = client.get("/deployments").json()
+    dep = b1_data.get("deployments") or client.get("/deployments").json()
     exec_resp = client.post(
         "/execute/PROP-B1",
         json={
