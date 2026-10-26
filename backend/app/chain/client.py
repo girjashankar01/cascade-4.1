@@ -54,6 +54,18 @@ def proposal_id_to_bytes32(pid: Union[str, bytes]) -> bytes:
 
 
 def send_tx(w3: Web3, from_key: str, fn_call: Any, gas: int = 2_000_000) -> Any:
+    chain_mode = os.environ.get("CHAIN_MODE", "").lower()
+    is_local_chain = True
+    try:
+        is_local_chain = w3.eth.chain_id in {31337, 1337}
+    except Exception:
+        is_local_chain = True
+
+    if chain_mode == "proof" or not is_local_chain:
+        from app.chain.public import send_tx_1559
+        res = send_tx_1559(w3, from_key, fn_call, gas=gas, wait_timeout=120)
+        return res["receipt"]
+
     account = Account.from_key(from_key)
     tx = fn_call.build_transaction(
         {

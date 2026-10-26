@@ -2,6 +2,8 @@
 
 import json
 import logging
+import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
@@ -960,8 +962,21 @@ def execute_proposal_endpoint(
     caller_account = Account.from_key(caller_pk)
     sig_bytes = bytes.fromhex(signature[2:] if signature.startswith("0x") else signature)
 
+    chain_mode = os.environ.get("CHAIN_MODE", "").lower()
+    is_local_chain = True
     try:
-        tx = executor.functions.execute(
+        is_local_chain = w3.eth.chain_id in {31337, 1337}
+    except Exception:
+        is_local_chain = True
+
+    is_proof_mode = (chain_mode == "proof") or (not is_local_chain)
+
+    try:
+        from app.chain.public import send_tx_1559, explorer_tx_url, get_explorer_base
+        from app.db import record_chain_tx
+        from datetime import datetime, timezone
+
+        exec_fn = executor.functions.execute(
             pid_b32,
             Web3.to_checksum_address(payload.target),
             int(payload.value or 0),
@@ -969,17 +984,45 @@ def execute_proposal_endpoint(
             VERIFIED,
             int(deadline),
             sig_bytes,
-        ).build_transaction(
-            {
-                "from": caller_account.address,
-                "nonce": w3.eth.get_transaction_count(caller_account.address),
-                "gas": 3_000_000,
-                "gasPrice": w3.eth.gas_price,
-            }
         )
-        signed_tx = w3.eth.account.sign_transaction(tx, caller_pk)
-        tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=10)
+
+        if is_proof_mode:
+            res = send_tx_1559(w3, caller_pk, exec_fn, gas=3_000_000, wait_timeout=120)
+            receipt = res["receipt"]
+            tx_hash_hex = res["tx_hash"]
+        else:
+            tx = exec_fn.build_transaction(
+                {
+                    "from": caller_account.address,
+                    "nonce": w3.eth.get_transaction_count(caller_account.address),
+                    "gas": 3_000_000,
+                    "gasPrice": w3.eth.gas_price,
+                }
+            )
+            signed_tx = w3.eth.account.sign_transaction(tx, caller_pk)
+            tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=10)
+            tx_hash_hex = tx_hash.hex() if hasattr(tx_hash, "hex") else str(tx_hash)
+
+        # Record to chain_txs table
+        effective_gp = getattr(receipt, "effectiveGasPrice", 0)
+        fee_eth = float(Web3.from_wei(receipt.gasUsed * effective_gp, "ether")) if effective_gp else 0.0
+        record_chain_tx({
+            "run_id": f"exec_{proposal_id}",
+            "step": "execute",
+            "role": "executor",
+            "from": caller_account.address,
+            "to": executor.address,
+            "tx_hash": tx_hash_hex if tx_hash_hex.startswith("0x") else "0x" + tx_hash_hex,
+            "status": "success" if receipt.status == 1 else "reverted",
+            "revert_reason": None,
+            "block_number": receipt.blockNumber,
+            "gas_used": receipt.gasUsed,
+            "effective_gas_price": effective_gp,
+            "fee_eth": fee_eth,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "explorer_url": explorer_tx_url(tx_hash_hex, get_explorer_base(w3.eth.chain_id)),
+        })
     except Exception as e:
         logger.error(f"On-chain execution failed: {e}")
         raise HTTPException(
@@ -994,6 +1037,7 @@ def execute_proposal_endpoint(
         )
 
     # 7. Update database record
+    tx_hash_str = receipt.transactionHash.hex() if hasattr(receipt.transactionHash, "hex") else str(receipt.transactionHash)
     with get_db_connection() as conn:
         conn.execute(
             """
@@ -1001,7 +1045,7 @@ def execute_proposal_endpoint(
             SET executed = 1, tx_hash = ?, block_number = ?
             WHERE proposal_id = ? AND verdict = 'VERIFIED'
             """,
-            (receipt.transactionHash.hex(), receipt.blockNumber, proposal_id),
+            (tx_hash_str, receipt.blockNumber, proposal_id),
         )
 
     return {
@@ -1277,4 +1321,297 @@ def get_proof_endpoint() -> Dict[str, Any]:
             "transactions": [],
             "message": f"Error reading proof file: {e}",
         }
+
+
+@router.get("/chain/status", response_model=Dict[str, Any])
+def get_chain_status_endpoint() -> Dict[str, Any]:
+    """Return live status of the connected blockchain and deployed contract addresses."""
+    chain_mode = os.environ.get("CHAIN_MODE", "").lower()
+    repo_root = Path(__file__).resolve().parents[3]
+
+    rpc_url = (os.environ.get("AMOY_RPC") or os.environ.get("RPC_URL_PROOF")) if chain_mode == "proof" else os.environ.get("RPC_URL", "http://127.0.0.1:8545")
+    w3 = get_web3(rpc_url)
+    connected = w3.is_connected()
+
+    chain_id = None
+    latest_block = None
+    rpc_health = "disconnected"
+    if connected:
+        try:
+            chain_id = w3.eth.chain_id
+            latest_block = w3.eth.block_number
+            rpc_health = "healthy"
+        except Exception:
+            rpc_health = "degraded"
+
+    contracts: Dict[str, str] = {}
+    proof_deployments = repo_root / "data" / "deployments.proof.json"
+    local_deployments = repo_root / "data" / "deployments.json"
+
+    if (chain_mode == "proof" or (chain_id and chain_id not in {31337, 1337})) and proof_deployments.exists():
+        try:
+            with open(proof_deployments, "r", encoding="utf-8") as f:
+                d = json.load(f)
+                contracts = {
+                    "token": d.get("token", ""),
+                    "registry": d.get("registry", ""),
+                    "treasury": d.get("treasury", ""),
+                    "executor": d.get("executor", ""),
+                }
+        except Exception:
+            pass
+    elif local_deployments.exists():
+        try:
+            with open(local_deployments, "r", encoding="utf-8") as f:
+                d = json.load(f)
+                contracts = {
+                    "token": d.get("token", ""),
+                    "registry": d.get("registry", ""),
+                    "treasury": d.get("treasury", ""),
+                    "executor": d.get("executor", ""),
+                }
+        except Exception:
+            pass
+
+    if not contracts.get("token"):
+        doc_proof = repo_root / "docs" / "proof.json"
+        if doc_proof.exists():
+            try:
+                with open(doc_proof, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                    c_map = d.get("contracts", {})
+                    contracts = {
+                        k: (v.get("address") if isinstance(v, dict) else v)
+                        for k, v in c_map.items()
+                    }
+            except Exception:
+                pass
+
+    from app.chain.public import get_explorer_base
+    explorer_base = get_explorer_base(chain_id or 31337)
+
+    return {
+        "chain_id": chain_id,
+        "latest_block": latest_block,
+        "rpc_connected": connected,
+        "rpc_health": rpc_health,
+        "chain_mode": "proof" if (chain_mode == "proof" or (chain_id and chain_id not in {31337, 1337})) else "local",
+        "contract_addresses": contracts,
+        "explorer_base": explorer_base,
+    }
+
+
+@router.get("/chain/balances", response_model=Dict[str, Any])
+def get_chain_balances_endpoint() -> Dict[str, Any]:
+    """Return live native ETH balances for core protocol roles and treasury token balance."""
+    chain_mode = os.environ.get("CHAIN_MODE", "").lower()
+    repo_root = Path(__file__).resolve().parents[3]
+
+    rpc_url = (os.environ.get("AMOY_RPC") or os.environ.get("RPC_URL_PROOF")) if chain_mode == "proof" else os.environ.get("RPC_URL", "http://127.0.0.1:8545")
+    w3 = get_web3(rpc_url)
+    if not w3.is_connected():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Cannot connect to blockchain node",
+        )
+
+    chain_id = w3.eth.chain_id
+    is_proof = (chain_mode == "proof") or (chain_id not in {31337, 1337})
+
+    role_addresses: Dict[str, str] = {}
+    if is_proof:
+        from app.chain.public import load_proof_env
+        try:
+            cfg = load_proof_env(".env.amoy", w3=w3)
+            role_addresses = {
+                "deployer": cfg.addresses.get("DEPLOYER_ADDR") or (Account.from_key(cfg.deployer_pk).address if cfg.deployer_pk else ""),
+                "proposer": cfg.addresses.get("PROPOSER_ADDR") or (Account.from_key(cfg.proposer_pk).address if cfg.proposer_pk else ""),
+                "governance": cfg.addresses.get("GOVERNANCE_ADDR") or (Account.from_key(cfg.governance_pk).address if cfg.governance_pk else ""),
+                "verifier": cfg.addresses.get("VERIFIER_ADDR") or (Account.from_key(cfg.verifier_pk).address if cfg.verifier_pk else ""),
+                "attacker": cfg.addresses.get("ATTACKER_ADDR") or "",
+            }
+        except Exception:
+            pass
+
+    if not role_addresses.get("proposer"):
+        from app.chain.client import PK_DEPLOYER, PK_PROPOSER, PK_GOVERNANCE, PK_VERIFIER, PK_ATTACKER
+        role_addresses = {
+            "deployer": Account.from_key(PK_DEPLOYER).address,
+            "proposer": Account.from_key(PK_PROPOSER).address,
+            "governance": Account.from_key(PK_GOVERNANCE).address,
+            "verifier": Account.from_key(PK_VERIFIER).address,
+            "attacker": Account.from_key(PK_ATTACKER).address,
+        }
+
+    roles_balances = {}
+    for role, addr in role_addresses.items():
+        if addr:
+            try:
+                bal_wei = w3.eth.get_balance(Web3.to_checksum_address(addr))
+                roles_balances[role] = {
+                    "address": addr,
+                    "balance_wei": bal_wei,
+                    "balance_eth": float(Web3.from_wei(bal_wei, "ether")),
+                }
+            except Exception:
+                roles_balances[role] = {"address": addr, "balance_wei": 0, "balance_eth": 0.0}
+        else:
+            roles_balances[role] = {"address": "", "balance_wei": 0, "balance_eth": 0.0}
+
+    treasury_addr = ""
+    token_addr = ""
+    proof_deployments = repo_root / "data" / "deployments.proof.json"
+    local_deployments = repo_root / "data" / "deployments.json"
+    deploy_file = proof_deployments if is_proof and proof_deployments.exists() else local_deployments
+
+    if deploy_file.exists():
+        try:
+            with open(deploy_file, "r", encoding="utf-8") as f:
+                d = json.load(f)
+                treasury_addr = d.get("treasury", "")
+                token_addr = d.get("token", "")
+        except Exception:
+            pass
+
+    if not treasury_addr:
+        doc_proof = repo_root / "docs" / "proof.json"
+        if doc_proof.exists():
+            try:
+                with open(doc_proof, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                    c_map = d.get("contracts", {})
+                    treasury_entry = c_map.get("treasury", {})
+                    treasury_addr = treasury_entry.get("address") if isinstance(treasury_entry, dict) else treasury_entry
+                    token_entry = c_map.get("token", {})
+                    token_addr = token_entry.get("address") if isinstance(token_entry, dict) else token_entry
+            except Exception:
+                pass
+
+    treasury_eth = 0.0
+    treasury_token_bal = 0
+    if treasury_addr:
+        try:
+            t_cs = Web3.to_checksum_address(treasury_addr)
+            raw_t_eth = w3.eth.get_balance(t_cs)
+            treasury_eth = float(Web3.from_wei(raw_t_eth, "ether")) if isinstance(raw_t_eth, (int, float)) else 0.0
+            if token_addr:
+                mock_token_artifact = load_artifact("MockToken")
+                token_contract = w3.eth.contract(address=Web3.to_checksum_address(token_addr), abi=mock_token_artifact["abi"])
+                raw_bal = token_contract.functions.balanceOf(t_cs).call()
+                treasury_token_bal = int(raw_bal) if isinstance(raw_bal, (int, float)) else 0
+        except Exception as e:
+            logger.warning(f"Error querying treasury balances: {e}")
+
+    try:
+        token_display = f"{treasury_token_bal / 10**6:,.2f} USDC"
+    except Exception:
+        token_display = "0.00 USDC"
+
+    return {
+        "chain_id": chain_id,
+        "chain_mode": "proof" if is_proof else "local",
+        "roles": roles_balances,
+        "treasury": {
+            "address": treasury_addr,
+            "balance_eth": treasury_eth,
+            "token_balance": treasury_token_bal,
+            "token_balance_display": token_display,
+        },
+    }
+
+
+@router.get("/chain/txs", response_model=List[Dict[str, Any]])
+def get_chain_txs_endpoint(
+    run_id: Optional[str] = None,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """Retrieve transaction history from chain_txs table, ordered newest first."""
+    from app.db import get_chain_txs
+    return get_chain_txs(run_id=run_id, limit=limit)
+
+
+@router.get("/chain/tx/{hash}", response_model=Dict[str, Any])
+def get_chain_tx_endpoint(
+    hash: str,
+) -> Dict[str, Any]:
+    """Retrieve transaction details, receipt, decoded status, and revert reason for a transaction hash."""
+    from app.db import get_chain_tx
+    from app.chain.public import get_explorer_base, explorer_tx_url, revert_reason as fetch_revert_reason
+
+    clean_hash = hash.strip()
+    if not clean_hash.startswith("0x") and not clean_hash.startswith("0X"):
+        clean_hash = "0x" + clean_hash
+
+    db_tx = get_chain_tx(clean_hash)
+
+    chain_mode = os.environ.get("CHAIN_MODE", "").lower()
+    rpc_url = (os.environ.get("AMOY_RPC") or os.environ.get("RPC_URL_PROOF")) if chain_mode == "proof" else os.environ.get("RPC_URL", "http://127.0.0.1:8545")
+    w3 = get_web3(rpc_url)
+
+    receipt = None
+    if w3.is_connected():
+        try:
+            receipt = w3.eth.get_transaction_receipt(clean_hash)
+        except Exception:
+            receipt = None
+
+    if not db_tx and not receipt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transaction {clean_hash} not found in database or on chain",
+        )
+
+    chain_id = w3.eth.chain_id if w3.is_connected() else 11155111
+    explorer_base = get_explorer_base(chain_id)
+
+    status_val = "pending"
+    revert_r = None
+    block_num = None
+    gas_used = None
+    effective_gp = None
+    fee_eth = None
+
+    if receipt:
+        status_val = "success" if receipt.status == 1 else "reverted"
+        block_num = receipt.blockNumber
+        gas_used = receipt.gasUsed
+        effective_gp = getattr(receipt, "effectiveGasPrice", 0)
+        fee_eth = float(Web3.from_wei(gas_used * effective_gp, "ether")) if effective_gp else 0.0
+        if receipt.status == 0:
+            revert_r = fetch_revert_reason(w3, clean_hash)
+
+    if db_tx:
+        return {
+            "tx_hash": db_tx["tx_hash"],
+            "run_id": db_tx.get("run_id"),
+            "step": db_tx.get("step"),
+            "role": db_tx.get("role"),
+            "from": db_tx.get("from"),
+            "to": db_tx.get("to"),
+            "status": status_val if receipt else db_tx.get("status"),
+            "revert_reason": revert_r or db_tx.get("revert_reason"),
+            "block_number": block_num or db_tx.get("block_number"),
+            "gas_used": gas_used or db_tx.get("gas_used"),
+            "effective_gas_price": effective_gp or db_tx.get("effective_gas_price"),
+            "fee_eth": fee_eth or db_tx.get("fee_eth"),
+            "timestamp": db_tx.get("timestamp"),
+            "explorer_url": explorer_tx_url(clean_hash, explorer_base),
+        }
+
+    return {
+        "tx_hash": clean_hash,
+        "run_id": None,
+        "step": "onchain",
+        "role": "unknown",
+        "from": receipt["from"] if receipt else "",
+        "to": receipt["to"] if receipt else "",
+        "status": status_val,
+        "revert_reason": revert_r,
+        "block_number": block_num,
+        "gas_used": gas_used,
+        "effective_gas_price": effective_gp,
+        "fee_eth": fee_eth,
+        "timestamp": None,
+        "explorer_url": explorer_tx_url(clean_hash, explorer_base),
+    }
 

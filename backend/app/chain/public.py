@@ -409,9 +409,26 @@ def revert_reason(w3: Web3, tx_hash: Union[str, bytes]) -> str:
     return "unknown"
 
 
+def get_explorer_base(chain_id: Optional[int] = None) -> str:
+    """Return the canonical block explorer URL for a given chain ID or environment setting."""
+    env_base = os.environ.get("EXPLORER_BASE")
+    if env_base:
+        return env_base.rstrip("/")
+    cid = chain_id or 11155111
+    if cid == 11155111:
+        return "https://sepolia.etherscan.io"
+    elif cid == 84532:
+        return "https://sepolia.basescan.org"
+    elif cid == 80002:
+        return "https://amoy.polygonscan.com"
+    elif cid in (31337, 1337):
+        return "http://127.0.0.1:8545"
+    return "https://etherscan.io"
+
+
 def explorer_tx_url(tx_hash: str, explorer_base: Optional[str] = None) -> str:
     """Build explorer URL for a transaction hash."""
-    base = (explorer_base or os.environ.get("EXPLORER_BASE", "")).rstrip("/")
+    base = (explorer_base or os.environ.get("EXPLORER_BASE") or get_explorer_base()).rstrip("/")
     tx = tx_hash if tx_hash.startswith("0x") else "0x" + tx_hash
     if not base:
         return tx
@@ -420,7 +437,7 @@ def explorer_tx_url(tx_hash: str, explorer_base: Optional[str] = None) -> str:
 
 def explorer_addr_url(address: str, explorer_base: Optional[str] = None) -> str:
     """Build explorer URL for an address."""
-    base = (explorer_base or os.environ.get("EXPLORER_BASE", "")).rstrip("/")
+    base = (explorer_base or os.environ.get("EXPLORER_BASE") or get_explorer_base()).rstrip("/")
     addr = to_checksum_address(address)
     if not base:
         return addr
