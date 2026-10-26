@@ -1,19 +1,24 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import type { BalancesInfo, DeploymentsInfo, Manifest, VerificationReport } from '../api/types';
-import { AddressValue, CopyValue, HashValue } from '../components/common/CopyValue';
+import { AddressValue, CopyValue } from '../components/common/CopyValue';
 import { ConfirmModal } from '../components/common/ConfirmModal';
 import { EmptyState } from '../components/common/EmptyState';
 import { StatusBadge } from '../components/common/StatusBadge';
 import {
   CheckCircleIcon,
   XCircleIcon,
-  ShieldIcon,
   RefreshCwIcon,
   CpuIcon,
-  LockIcon,
   AlertTriangleIcon,
 } from '../components/common/Icons';
+import { Button } from '../components/ui/Button';
+import { Icon } from '../components/ui/Icon';
+import { StatusMark } from '../components/ui/StatusMark';
+import { LazyLock } from '../components/lock/LazyLock';
+import { TechnicalDrawer } from '../features/workbench/TechnicalDrawer';
+import { BalanceComparison } from '../features/workbench/BalanceComparison';
+import { ActionComparison } from '../features/workbench/ActionComparison';
 
 interface ExecutionPageProps {
   proposalId: string;
@@ -42,6 +47,7 @@ export function ExecutionPage({
   const [customTarget, setCustomTarget] = useState('');
   const [customValue, setCustomValue] = useState(0);
   const [customCalldata, setCustomCalldata] = useState('');
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   // Load existing verification history for this proposal
   useEffect(() => {
@@ -211,148 +217,236 @@ export function ExecutionPage({
   };
 
   const action = manifest?.manifest.action;
-  const envelope = manifest?.manifest.envelope;
-  const decoded = report?.decoded_tx;
   const sim = report?.simulation;
-  const diff = report?.diff || {};
+  const isEngaged = Boolean(executionReceipt || report?.attestation_sig);
+
+  // Compute token numbers for animated comparison
+  const treasuryBase = balances?.treasury?.token_balance ?? 10000000;
+  const recipientBase = balances?.recipient?.token_balance ?? 0;
+  const outflow = sim?.treasury_outflow ? sim.treasury_outflow / 10**6 : (action?.amountRaw ? Number(action.amountRaw) / 10**6 : 0);
+  const treasuryPredicted = executionReceipt ? treasuryBase : Math.max(0, treasuryBase - (report?.verdict === 'VERIFIED' ? outflow : 0));
+  const recipientPredicted = executionReceipt ? recipientBase : recipientBase + (report?.verdict === 'VERIFIED' ? outflow : 0);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
       {/* Workbench Header */}
-      <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: '4px' }}>
-            <CpuIcon style={{ color: 'var(--accent-mint)' }} />
-            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Execution Workbench
+            <CpuIcon style={{ color: 'var(--color-action)' }} />
+            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+              Execution Workbench · Safety Verification
             </span>
           </div>
-          <h2 style={{ margin: 0, fontSize: 'var(--text-xl)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <h2 style={{ margin: 0, fontSize: 'var(--text-heading)', display: 'flex', alignItems: 'center', gap: '12px' }}>
             {proposalId}
             {manifest && (
-              <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontWeight: 400 }}>
+              <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', fontWeight: 400 }}>
                 (Version {manifest.version})
               </span>
             )}
           </h2>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
           {isLoading && (
-            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Syncing...</span>
+            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)' }}>Syncing...</span>
           )}
+
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Verification Verdict</div>
-            <StatusBadge status={executionReceipt ? 'EXECUTED' : report?.verdict || 'AWAITING VERIFICATION'} />
+            <StatusMark verdict={executionReceipt ? 'EXECUTED' : report?.verdict || 'UNCERTAIN'} />
           </div>
 
-          <button
-            type="button"
-            className="btn btn-secondary"
+          <Button
+            variant="secondary"
             onClick={handleRunVerification}
             disabled={isVerifying || !manifest || Boolean(executionReceipt)}
             title={executionReceipt ? `Proposal ${proposalId} has already been executed on-chain (Block #${executionReceipt.block_number}).` : 'Run EVM simulation in Anvil sandbox'}
           >
-            <RefreshCwIcon className={isVerifying ? 'spin' : ''} width={14} height={14} />
-            {isVerifying ? 'Simulating...' : executionReceipt ? 'Execution Completed' : 'Run EVM Verification'}
-          </button>
+            <RefreshCwIcon className={isVerifying ? 'spin' : ''} width={16} height={16} />
+            <span>{isVerifying ? 'Simulating EVM...' : executionReceipt ? 'Execution Completed' : 'Run EVM Verification'}</span>
+          </Button>
+
+          {report && (
+            <Button
+              variant="quiet"
+              onClick={() => setIsDrawerOpen(true)}
+              title="Open Technical Inspection Drawer"
+            >
+              <Icon name="details" />
+              <span>Diagnostic Drawer</span>
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Hero Visualizer with Interactive Mechanical Lock Artwork */}
+      <div className="card card-raised" style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 320px) 1fr', gap: 'var(--space-6)', alignItems: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-3)' }}>
+          <LazyLock engaged={isEngaged} />
+          <div style={{ marginTop: 'var(--space-3)', textAlign: 'center' }}>
+            <span style={{
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              color: isEngaged ? 'var(--color-allowed)' : 'var(--color-attention)'
+            }}>
+              {isEngaged ? 'Lock Engaged · Vault Gated' : 'Lock Disengaged · Pre-Verification'}
+            </span>
+            <div style={{ fontSize: '0.75rem', color: 'var(--color-muted)', marginTop: '2px' }}>
+              {isEngaged
+                ? 'Single-use EIP-712 cryptographic seal closed'
+                : 'Awaiting deterministic rule verification & seal'}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-action)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+            Guarded Execution Safety Anchor
+          </span>
+          <h3 style={{ margin: 0, fontSize: 'var(--text-title)' }}>
+            EVM Bytecode Pre-Execution Firewall
+          </h3>
+          <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--color-muted)', lineHeight: 1.6 }}>
+            The CASCADE engine isolates transaction execution in an ephemeral EVM sandbox before any live funds can move.
+            If bytecode mismatches the DAO's approved human intent, the shackle remains open and cryptographic attestation is strictly withheld.
+          </p>
+
+          {/* Quick Check Sequence Progression */}
+          <ol className="check-sequence" style={{ marginTop: 'var(--space-2)' }}>
+            <li className={`check-step ${manifest ? 'complete' : 'current'}`}>
+              <Icon name={manifest ? 'check' : 'edit'} />
+              <span>1. Manifest Committed</span>
+            </li>
+            <li className={`check-step ${report?.verdict === 'VERIFIED' ? 'complete' : report?.verdict === 'MISMATCH' ? 'current' : ''}`}>
+              <Icon name={report?.verdict === 'VERIFIED' ? 'check' : report?.verdict === 'MISMATCH' ? 'stop' : 'run'} />
+              <span>2. EVM Simulated</span>
+            </li>
+            <li className={`check-step ${report?.attestation_sig ? 'complete' : ''}`}>
+              <Icon name={report?.attestation_sig ? 'lock' : 'unlock'} />
+              <span>3. Attested</span>
+            </li>
+            <li className={`check-step ${executionReceipt ? 'complete' : ''}`}>
+              <Icon name={executionReceipt ? 'check' : 'arrow'} />
+              <span>4. Executed</span>
+            </li>
+          </ol>
         </div>
       </div>
 
       {executionReceipt && (
         <div style={{
           padding: 'var(--space-4)',
-          backgroundColor: 'rgba(16, 185, 129, 0.08)',
-          border: '1px solid rgba(16, 185, 129, 0.3)',
+          backgroundColor: 'var(--color-allowed-surface)',
+          border: '1px solid var(--color-allowed)',
           borderRadius: 'var(--radius-md)',
           display: 'flex',
           flexDirection: 'column',
           gap: '6px'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#6ee7b7', fontWeight: 600, fontSize: 'var(--text-sm)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-allowed)', fontWeight: 600, fontSize: 'var(--text-sm)' }}>
             <CheckCircleIcon />
             Proposal {proposalId} Successfully Executed on Chain (Mined in Block #{executionReceipt.block_number})
           </div>
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', lineHeight: 1.5 }}>
             GuardedExecutor single-use replay protection is permanently recorded on-chain (<code>executed[pid] = true</code>).
-            Re-verifying an executed proposal would simulate against an already-depleted treasury balance. To execute a fresh demonstration payout cycle, use <strong>Scenario A</strong> or <strong>Scenario C (Reset &amp; Seed)</strong> from the Scenario Runner.
+            Re-verifying an executed proposal simulates against an already-depleted treasury balance. To run a fresh demonstration payout cycle, use <strong>Scenario A</strong> or <strong>Scenario C (Reset &amp; Seed)</strong> from the Scenario Runner.
           </div>
         </div>
       )}
 
       {error && (
-        <div style={{ padding: 'var(--space-3) var(--space-4)', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <AlertTriangleIcon style={{ color: '#f87171' }} />
-          <span style={{ fontSize: 'var(--text-xs)', color: '#fca5a5' }}>{error}</span>
+        <div style={{
+          padding: 'var(--space-3) var(--space-4)',
+          backgroundColor: 'var(--color-blocked-surface)',
+          border: '1px solid var(--color-blocked)',
+          borderRadius: 'var(--radius-md)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <AlertTriangleIcon style={{ color: 'var(--color-blocked)' }} />
+          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-blocked)' }}>{error}</span>
         </div>
       )}
 
       {/* Governance Architecture Notice */}
-      <div style={{ padding: 'var(--space-2) var(--space-4)', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{
+        padding: 'var(--space-3) var(--space-4)',
+        backgroundColor: 'var(--color-surface)',
+        border: 'var(--border-width) solid var(--color-divider)',
+        borderRadius: 'var(--radius-md)',
+        fontSize: '0.875rem',
+        color: 'var(--color-muted)',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 'var(--space-3)'
+      }}>
         <span>
-          <strong>Governance Model:</strong> Simulated governance approval active (<code>governance.approve(pid, versionHash)</code>). The registry strictly guarantees version integrity. Production path: OpenZeppelin Governor + TimelockController.
+          <strong>Governance Model:</strong> Simulated governance approval active (<code>governance.approve(pid, versionHash)</code>). The registry guarantees version integrity. Production path: OpenZeppelin Governor + TimelockController.
         </span>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          style={{ fontSize: '11px' }}
+        <Button
+          variant="quiet"
+          className="btn-sm"
           onClick={() => setShowCustomTester(!showCustomTester)}
         >
-          {showCustomTester ? 'Hide Custom Calldata Tester' : 'Adversarial Custom Calldata Tester'}
-        </button>
+          {showCustomTester ? 'Hide Adversarial Tester' : 'Adversarial Custom Calldata Tester'}
+        </Button>
       </div>
 
       {/* Expandable Custom Calldata Tester */}
       {showCustomTester && (
-        <div className="card" style={{ border: '1px dashed var(--accent-mint)' }}>
+        <div className="card" style={{ border: '1px dashed var(--color-action)' }}>
           <div className="card-header">
-            <span className="card-title" style={{ fontSize: 'var(--text-sm)' }}>
-              Adversarial Calldata Simulation Workbench
-            </span>
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+            <span className="card-title">Adversarial Calldata Simulation Workbench</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-muted)' }}>
               Test arbitrary calldata payloads against live Anvil EVM &amp; deterministic rules
             </span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 'var(--space-3)' }}>
             <div>
-              <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Target Contract Address</label>
+              <label style={{ fontSize: '0.75rem', color: 'var(--color-muted)', display: 'block', marginBottom: '4px' }}>Target Contract Address</label>
               <input
                 type="text"
                 placeholder="0x..."
                 value={customTarget}
                 onChange={(e) => setCustomTarget(e.target.value)}
-                style={{ width: '100%', padding: '6px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}
+                style={{ width: '100%', fontFamily: 'var(--font-technical)' }}
               />
             </div>
             <div>
-              <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>ETH Value (wei)</label>
+              <label style={{ fontSize: '0.75rem', color: 'var(--color-muted)', display: 'block', marginBottom: '4px' }}>ETH Value (wei)</label>
               <input
                 type="number"
                 value={customValue}
                 onChange={(e) => setCustomValue(parseInt(e.target.value, 10) || 0)}
-                style={{ width: '100%', padding: '6px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}
+                style={{ width: '100%', fontFamily: 'var(--font-technical)' }}
               />
             </div>
           </div>
           <div style={{ marginTop: 'var(--space-3)' }}>
-            <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Hex Calldata (e.g. 0xa9059cbb...)</label>
+            <label style={{ fontSize: '0.75rem', color: 'var(--color-muted)', display: 'block', marginBottom: '4px' }}>Hex Calldata (e.g. 0xa9059cbb...)</label>
             <input
               type="text"
               placeholder="0x..."
               value={customCalldata}
               onChange={(e) => setCustomCalldata(e.target.value)}
-              style={{ width: '100%', padding: '6px', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}
+              style={{ width: '100%', fontFamily: 'var(--font-technical)' }}
             />
           </div>
           <div style={{ marginTop: 'var(--space-3)', display: 'flex', justifyContent: 'flex-end' }}>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
+            <Button
+              variant="primary"
+              className="btn-sm"
               onClick={handleRunCustomVerification}
               disabled={isVerifying || !customCalldata.trim()}
             >
               {isVerifying ? 'Simulating...' : 'Simulate & Evaluate Rules'}
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -364,119 +458,30 @@ export function ExecutionPage({
         />
       ) : (
         <>
-          {/* Side-by-Side Action Comparison (Centrepiece) */}
+          {/* Side-by-Side Action Comparison (Centrepiece from design-extract) */}
+          <ActionComparison manifest={manifest} report={report} />
+
+          {/* Balance Comparison with Smooth Motion Counter */}
           <div className="card">
             <div className="card-header">
-              <span className="card-title">Approved Intent vs Submitted Transaction</span>
-              {decoded && (
-                <StatusBadge status={decoded.matches_manifest ? 'MATCH' : 'MISMATCH'} size="sm" />
-              )}
-            </div>
-
-            <div className="comparison-grid">
-              {/* Left Column: Approved Manifest Action */}
-              <div className="comparison-col">
-                <div className="comparison-header">
-                  <span>Approved Manifest Action</span>
-                  <span style={{ color: 'var(--accent-mint)' }}>Governance Record</span>
-                </div>
-
-                <div className="field-row">
-                  <span className="field-label">Action Kind</span>
-                  <span className="field-value mono-val">{action?.kind || 'erc20_payout'}</span>
-                </div>
-                <div className="field-row">
-                  <span className="field-label">Token Contract</span>
-                  <span className="field-value"><AddressValue address={action?.token || ''} /></span>
-                </div>
-                <div className="field-row">
-                  <span className="field-label">Approved Recipient</span>
-                  <span className="field-value"><AddressValue address={action?.recipient || ''} /></span>
-                </div>
-                <div className="field-row">
-                  <span className="field-label">Approved Amount</span>
-                  <span className="field-value">
-                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {(Number(action?.amountRaw || 0) / 10 ** (action?.decimals || 6)).toLocaleString()} USDC
-                    </span>{' '}
-                    <span style={{ color: 'var(--text-muted)' }}>({action?.amountRaw})</span>
-                  </span>
-                </div>
-                <div className="field-row">
-                  <span className="field-label">Outflow Envelope</span>
-                  <span className="field-value mono-val">
-                    Max: {envelope?.maxTokenOutflow?.[action?.token?.toLowerCase() || ''] || action?.amountRaw}
-                  </span>
-                </div>
-                <div className="field-row">
-                  <span className="field-label">Version Hash</span>
-                  <span className="field-value"><HashValue hash={manifest.version_hash} /></span>
-                </div>
-                <div className="field-row">
-                  <span className="field-label">Action Hash</span>
-                  <span className="field-value"><HashValue hash={manifest.action_hash} /></span>
+              <div>
+                <span className="card-title">Token Balance Delta Verification</span>
+                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)', marginTop: '2px' }}>
+                  Animated state transition matching sandbox execution predictions
                 </div>
               </div>
-
-              {/* Right Column: Submitted Transaction Calldata */}
-              <div className="comparison-col">
-                <div className="comparison-header">
-                  <span>Submitted Transaction</span>
-                  <span style={{ color: decoded?.is_supported ? 'var(--text-secondary)' : '#f87171' }}>
-                    {decoded?.method_name || 'transfer(address,uint256)'}
-                  </span>
-                </div>
-
-                {decoded ? (
-                  <>
-                    <div className="field-row">
-                      <span className="field-label">Selector</span>
-                      <span className="field-value mono-val">{decoded.selector}</span>
-                    </div>
-                    <div className="field-row">
-                      <span className="field-label">Target Contract</span>
-                      <span className="field-value"><AddressValue address={decoded.target} /></span>
-                    </div>
-                    <div className={`field-row ${diff.recipient ? 'field-diff-alert' : ''}`}>
-                      <span className="field-label">Submitted Recipient</span>
-                      <span className="field-value">
-                        <AddressValue address={decoded.recipient || ''} />
-                        {diff.recipient && <span style={{ color: '#f87171', marginLeft: '6px', fontSize: '10px' }}>[MISMATCH]</span>}
-                      </span>
-                    </div>
-                    <div className={`field-row ${diff.amountRaw ? 'field-diff-alert' : ''}`}>
-                      <span className="field-label">Submitted Amount</span>
-                      <span className="field-value">
-                        <span style={{ fontWeight: 600 }}>
-                          {(Number(decoded.amount_raw || 0) / 10 ** (action?.decimals || 6)).toLocaleString()} USDC
-                        </span>{' '}
-                        <span style={{ color: 'var(--text-muted)' }}>({decoded.amount_raw})</span>
-                        {diff.amountRaw && <span style={{ color: '#f87171', marginLeft: '6px', fontSize: '10px' }}>[MISMATCH]</span>}
-                      </span>
-                    </div>
-                    <div className="field-row">
-                      <span className="field-label">ETH Value</span>
-                      <span className="field-value mono-val">{decoded.value} wei</span>
-                    </div>
-                    <div className="field-row">
-                      <span className="field-label">Calldata Hash</span>
-                      <span className="field-value"><HashValue hash={decoded.calldata_hash} /></span>
-                    </div>
-                    <div className={`field-row ${diff.actionHash ? 'field-diff-alert' : ''}`}>
-                      <span className="field-label">Computed Action Hash</span>
-                      <span className="field-value">
-                        <HashValue hash={decoded.action_hash} />
-                        {diff.actionHash && <span style={{ color: '#f87171', marginLeft: '6px', fontSize: '10px' }}>[MISMATCH]</span>}
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-xs)' }}>
-                    Run EVM Verification to simulate and compare transaction calldata.
-                  </div>
-                )}
-              </div>
+              <span className="badge" style={{ backgroundColor: 'var(--color-canvas)', color: 'var(--color-text)', border: 'var(--border-width) solid var(--color-divider)' }}>
+                Asset: USDC (6 Decimals)
+              </span>
             </div>
+
+            <BalanceComparison
+              treasuryBefore={treasuryBase}
+              treasuryAfter={treasuryPredicted}
+              recipientBefore={recipientBase}
+              recipientAfter={recipientPredicted}
+              tokenSymbol="USDC"
+            />
           </div>
 
           {/* EVM Simulation State Deltas */}
@@ -484,94 +489,87 @@ export function ExecutionPage({
             <div className="card-header">
               <div>
                 <span className="card-title">EVM Simulation Observed State Deltas (Anvil Sandbox)</span>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Isolated prediction via Anvil snapshot revert (nonces &amp; watchlist restored). Actual on-chain status is confirmed below.
+                <div style={{ fontSize: '0.875rem', color: 'var(--color-muted)', marginTop: '2px' }}>
+                  Isolated prediction via Anvil snapshot revert (nonces &amp; watchlist restored).
                 </div>
               </div>
               {sim && (
-                <span className={`badge ${sim.restoration_verified ? 'badge-verified' : 'badge-mismatch'}`} style={{ fontSize: '10px' }}>
-                  Snapshot Revert: {sim.restoration_verified ? 'VERIFIED' : 'FAILED'}
-                </span>
+                <StatusMark
+                  status={sim.restoration_verified ? 'VERIFIED' : 'MISMATCH'}
+                  compact
+                />
               )}
             </div>
 
             {sim ? (
               <div className="delta-grid">
                 {/* Treasury Outflow Card */}
-                {(() => {
-                  const treasuryLower = deployments?.treasury?.toLowerCase() || '';
-                  const tBase = sim.baseline_state?.[treasuryLower]?.token_balance;
-                  const tPost = sim.post_state?.[treasuryLower]?.token_balance;
-                  const displayBase = tBase != null ? `${(tBase / 10**6).toLocaleString()} USDC` : (sim.treasury_outflow > 0 ? `${(sim.treasury_outflow / 10**6).toLocaleString()} USDC` : '—');
-                  const displayPost = tPost != null ? `${(tPost / 10**6).toLocaleString()} USDC` : (sim.treasury_outflow > 0 ? '0 USDC' : '—');
-                  return (
-                    <div className="delta-card">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Treasury Token Balance</div>
-                        {balances && (
-                          <span style={{ fontSize: '10px', color: 'var(--accent-mint)', fontWeight: 600 }}>
-                            Live: {balances.treasury.token_balance.toLocaleString()} USDC
-                          </span>
-                        )}
-                      </div>
-                      <div className="delta-flow" style={{ marginTop: '4px' }}>
-                        <span className="delta-val-before">
-                          {displayBase}
-                        </span>
-                        <span>→</span>
-                        <span className="delta-val-after">
-                          {displayPost}
-                        </span>
-                      </div>
-                      <span className="delta-pill outflow">
-                        -{(sim.treasury_outflow / 10**6).toLocaleString()} USDC Outflow
+                <div className="delta-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)' }}>Treasury Token Balance</div>
+                    {balances && (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--color-action)', fontWeight: 600 }}>
+                        Live: {balances.treasury.token_balance.toLocaleString()} USDC
                       </span>
-                    </div>
-                  );
-                })()}
+                    )}
+                  </div>
+                  <div className="delta-flow" style={{ marginTop: '4px' }}>
+                    <span className="delta-val-before">
+                      {(treasuryBase).toLocaleString()} USDC
+                    </span>
+                    <span>→</span>
+                    <span className="delta-val-after">
+                      {(treasuryPredicted).toLocaleString()} USDC
+                    </span>
+                  </div>
+                  <span className="delta-pill outflow">
+                    -{(sim.treasury_outflow / 10**6).toLocaleString()} USDC Outflow
+                  </span>
+                </div>
 
                 {/* Recipient Inflow Card */}
-                {(() => {
-                  const recipientLower = action?.recipient?.toLowerCase() || '';
-                  const rBase = sim.baseline_state?.[recipientLower]?.token_balance;
-                  const rPost = sim.post_state?.[recipientLower]?.token_balance;
-                  const displayBase = rBase != null ? `${(rBase / 10**6).toLocaleString()} USDC` : (sim.recipient_inflow > 0 ? '0 USDC' : '—');
-                  const displayPost = rPost != null ? `${(rPost / 10**6).toLocaleString()} USDC` : (sim.recipient_inflow > 0 ? `${(sim.recipient_inflow / 10**6).toLocaleString()} USDC` : '—');
-                  return (
-                    <div className="delta-card">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Recipient Token Balance</div>
-                        {balances && (
-                          <span style={{ fontSize: '10px', color: '#38bdf8', fontWeight: 600 }}>
-                            Live: {balances.recipient.token_balance.toLocaleString()} USDC
-                          </span>
-                        )}
-                      </div>
-                      <div className="delta-flow" style={{ marginTop: '4px' }}>
-                        <span className="delta-val-before">
-                          {displayBase}
-                        </span>
-                        <span>→</span>
-                        <span className="delta-val-after">
-                          {displayPost}
-                        </span>
-                      </div>
-                      <span className="delta-pill inflow">
-                        +{(sim.recipient_inflow / 10**6).toLocaleString()} USDC Inflow
+                <div className="delta-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)' }}>Recipient Token Balance</div>
+                    {balances && (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--color-text)', fontWeight: 600 }}>
+                        Live: {balances.recipient.token_balance.toLocaleString()} USDC
                       </span>
-                    </div>
-                  );
-                })()}
+                    )}
+                  </div>
+                  <div className="delta-flow" style={{ marginTop: '4px' }}>
+                    <span className="delta-val-before">
+                      {(recipientBase).toLocaleString()} USDC
+                    </span>
+                    <span>→</span>
+                    <span className="delta-val-after">
+                      {(recipientPredicted).toLocaleString()} USDC
+                    </span>
+                  </div>
+                  <span className="delta-pill inflow">
+                    +{(sim.recipient_inflow / 10**6).toLocaleString()} USDC Inflow
+                  </span>
+                </div>
 
                 {/* Invariants & Slot Card */}
                 <div className="delta-card">
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Watched State Invariants</div>
-                  <div style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div>Unexpected Gains: <strong style={{ color: Object.keys(sim.unexpected_gains || {}).length === 0 ? '#34d399' : '#f87171' }}>{Object.keys(sim.unexpected_gains || {}).length}</strong></div>
-                    <div>Allowances Changed: <strong style={{ color: Object.keys(sim.allowance_changes || {}).length === 0 ? '#34d399' : '#f87171' }}>{Object.keys(sim.allowance_changes || {}).length}</strong></div>
+                  <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted)' }}>Watched State Invariants</div>
+                  <div style={{ marginTop: 'var(--space-2)', fontSize: '0.8125rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div>
+                      Unexpected Gains:{' '}
+                      <strong style={{ color: Object.keys(sim.unexpected_gains || {}).length === 0 ? 'var(--color-allowed)' : 'var(--color-blocked)' }}>
+                        {Object.keys(sim.unexpected_gains || {}).length}
+                      </strong>
+                    </div>
+                    <div>
+                      Allowances Changed:{' '}
+                      <strong style={{ color: Object.keys(sim.allowance_changes || {}).length === 0 ? 'var(--color-allowed)' : 'var(--color-blocked)' }}>
+                        {Object.keys(sim.allowance_changes || {}).length}
+                      </strong>
+                    </div>
                     <div>
                       Implementation Slot:{' '}
-                      <span className="mono-val" style={{ fontSize: '10px', color: Object.keys(sim.slot_changes || {}).length === 0 ? 'var(--text-secondary)' : 'var(--accent-mint)' }}>
+                      <span className="mono-val" style={{ fontSize: '0.75rem', color: Object.keys(sim.slot_changes || {}).length === 0 ? 'var(--color-muted)' : 'var(--color-action)' }}>
                         {Object.keys(sim.slot_changes || {}).length === 0 ? '0x3608... Unchanged' : `0x3608... Updated (${Object.keys(sim.slot_changes || {}).length} change)`}
                       </span>
                     </div>
@@ -579,7 +577,7 @@ export function ExecutionPage({
                 </div>
               </div>
             ) : (
-              <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-xs)' }}>
+              <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--color-muted)', fontSize: 'var(--text-sm)' }}>
                 Simulation deltas will appear after running EVM verification.
               </div>
             )}
@@ -590,11 +588,11 @@ export function ExecutionPage({
             <div className="card-header">
               <div>
                 <span className="card-title">Deterministic Rule Evaluation</span>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Evaluates 8 deterministic rules (R1–R7, R9). Note: Rule R8 is unassigned in the CASCADE specification; R7 evaluates selector scope and R9 evaluates ownership/role immutability.
+                <div style={{ fontSize: '0.875rem', color: 'var(--color-muted)', marginTop: '2px' }}>
+                  Evaluates 8 deterministic rules (R1–R7, R9) guaranteeing invariant bounds.
                 </div>
               </div>
-              {report && <StatusBadge status={report.verdict} size="sm" />}
+              {report && <StatusMark verdict={report.verdict} compact />}
             </div>
 
             {report?.rules ? (
@@ -612,22 +610,22 @@ export function ExecutionPage({
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <StatusBadge status={r.status} size="sm" />
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
+                          <Button
+                            variant="quiet"
+                            className="btn-sm"
                             onClick={() => setExpandedRule(isExpanded ? null : r.rule_id)}
                           >
                             {isExpanded ? 'Hide' : 'Details'}
-                          </button>
+                          </Button>
                         </div>
                       </div>
                       <div className="rule-expl">{r.explanation}</div>
 
                       {/* Expandable Evidence Details */}
                       {isExpanded && (
-                        <div style={{ marginTop: 'var(--space-3)', padding: 'var(--space-3)', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)' }}>
-                          <div style={{ color: 'var(--text-muted)', marginBottom: '4px', fontWeight: 600 }}>Diagnostic Evidence:</div>
-                          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', color: 'var(--text-secondary)' }}>
+                        <div style={{ marginTop: 'var(--space-3)', padding: 'var(--space-3)', backgroundColor: 'var(--color-canvas)', border: 'var(--border-width) solid var(--color-divider)', borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem', fontFamily: 'var(--font-technical)' }}>
+                          <div style={{ color: 'var(--color-muted)', marginBottom: '4px', fontWeight: 600 }}>Diagnostic Evidence:</div>
+                          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', color: 'var(--color-text)' }}>
                             {JSON.stringify(r.evidence, null, 2)}
                           </pre>
                         </div>
@@ -637,7 +635,7 @@ export function ExecutionPage({
                 })}
               </div>
             ) : (
-              <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-xs)' }}>
+              <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--color-muted)', fontSize: 'var(--text-sm)' }}>
                 Rule checklist evaluates deterministically during verification.
               </div>
             )}
@@ -647,15 +645,15 @@ export function ExecutionPage({
           <div className="card card-raised">
             <div className="card-header">
               <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <LockIcon style={{ color: 'var(--accent-mint)' }} />
-                EIP-712 Attestation & Guarded Execution
+                <Icon name="lock" style={{ color: 'var(--color-action)' }} />
+                EIP-712 Attestation &amp; Guarded Execution
               </span>
               {executionReceipt ? (
-                <StatusBadge status="EXECUTED" />
+                <StatusMark verdict="EXECUTED" compact />
               ) : report?.attestation_sig ? (
-                <StatusBadge status="ATTESTED" />
+                <StatusMark verdict="ATTESTED" compact />
               ) : report?.verdict === 'MISMATCH' ? (
-                <StatusBadge status="BLOCKED" />
+                <StatusMark verdict="BLOCKED" compact />
               ) : (
                 <span className="badge badge-neutral">Execution Gated</span>
               )}
@@ -665,31 +663,31 @@ export function ExecutionPage({
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 'var(--space-3)' }}>
                   <div>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Verifier Address:</span>
+                    <span style={{ fontSize: '0.8125rem', color: 'var(--color-muted)' }}>Verifier Address:</span>
                     <div><AddressValue address={report.verifier_address || deployments?.verifier || ''} /></div>
                   </div>
                   <div>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Attestation Deadline:</span>
+                    <span style={{ fontSize: '0.8125rem', color: 'var(--color-muted)' }}>Attestation Deadline:</span>
                     <div className="mono-val">{report.deadline} (Chain Block Time)</div>
                   </div>
                   <div>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>EIP-712 Domain:</span>
+                    <span style={{ fontSize: '0.8125rem', color: 'var(--color-muted)' }}>EIP-712 Domain:</span>
                     <div className="mono-val">GuardedExecutor (v1)</div>
                   </div>
                 </div>
 
                 <div>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Cryptographic Signature (65-byte):</span>
+                  <span style={{ fontSize: '0.8125rem', color: 'var(--color-muted)' }}>Cryptographic Signature (65-byte):</span>
                   <div><CopyValue value={report.attestation_sig} truncate={false} /></div>
                 </div>
 
                 {executionReceipt ? (
-                  <div style={{ padding: 'var(--space-4)', backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: 'var(--radius-md)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#6ee7b7', fontWeight: 600, fontSize: 'var(--text-sm)', marginBottom: '8px' }}>
+                  <div style={{ padding: 'var(--space-4)', backgroundColor: 'var(--color-allowed-surface)', border: '1px solid var(--color-allowed)', borderRadius: 'var(--radius-md)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-allowed)', fontWeight: 600, fontSize: 'var(--text-sm)', marginBottom: '8px' }}>
                       <CheckCircleIcon />
                       Guarded Execution Confirmed On-Chain
                     </div>
-                    <div style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)' }}>
+                    <div style={{ fontSize: '0.8125rem', fontFamily: 'var(--font-technical)' }}>
                       <div>Transaction Hash: <CopyValue value={executionReceipt.tx_hash} /></div>
                       <div>Block Number: <strong>{executionReceipt.block_number}</strong></div>
                       <div>GuardedExecutor: Single-use replay protection recorded (executed[pid] = true)</div>
@@ -697,23 +695,22 @@ export function ExecutionPage({
                   </div>
                 ) : (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-2)' }}>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
+                    <Button
+                      variant="primary"
                       onClick={() => setShowConfirmModal(true)}
                       disabled={isExecuting}
                     >
-                      <ShieldIcon width={14} height={14} />
-                      {isExecuting ? 'Broadcasting...' : 'Execute Transaction on Chain'}
-                    </button>
+                      <Icon name="lock" />
+                      <span>{isExecuting ? 'Broadcasting...' : 'Execute Transaction on Chain'}</span>
+                    </Button>
                   </div>
                 )}
               </div>
             ) : (
-              <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 'var(--text-xs)' }}>
+              <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--color-muted)', fontSize: 'var(--text-sm)' }}>
                 {report?.verdict === 'MISMATCH' ? (
-                  <span style={{ color: '#fca5a5' }}>
-                    <XCircleIcon width={14} height={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '6px' }} />
+                  <span style={{ color: 'var(--color-blocked)' }}>
+                    <XCircleIcon width={16} height={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '6px' }} />
                     Execution strictly prohibited: Attestation withheld due to {(() => {
                       const failed = report?.rules?.find(r => r.status === 'FAIL');
                       return failed ? `Rule ${failed.rule_id} (${failed.name}) failure.` : 'verification mismatch.';
@@ -728,6 +725,14 @@ export function ExecutionPage({
         </>
       )}
 
+      {/* Technical Inspection Drawer */}
+      <TechnicalDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        report={report}
+        proposalId={proposalId}
+      />
+
       {/* Confirmation Modal */}
       <ConfirmModal
         isOpen={showConfirmModal}
@@ -741,3 +746,5 @@ export function ExecutionPage({
     </div>
   );
 }
+
+export default ExecutionPage;

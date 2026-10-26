@@ -26,6 +26,7 @@ contracts/broadcast/
 # Runtime data
 data/*
 !data/.gitkeep
+data/deployments.proof.placeholder.json
 *.db
 *.db-*
 *.sqlite

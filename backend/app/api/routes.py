@@ -1408,6 +1408,9 @@ def get_chain_status_endpoint() -> Dict[str, Any]:
             rpc_health = "degraded"
 
     contracts: Dict[str, str] = {}
+    file_chain_id: Optional[int] = None
+    deploy_file_found = False
+
     if (chain_mode == "proof" or (chain_id and chain_id not in {31337, 1337})) and DEPLOYMENTS_PROOF_PATH.exists():
         try:
             with open(DEPLOYMENTS_PROOF_PATH, "r", encoding="utf-8") as f:
@@ -1418,6 +1421,9 @@ def get_chain_status_endpoint() -> Dict[str, Any]:
                     "treasury": d.get("treasury", ""),
                     "executor": d.get("executor", ""),
                 }
+                raw_fcid = d.get("chain_id")
+                file_chain_id = int(raw_fcid) if raw_fcid is not None and str(raw_fcid).isdigit() else None
+                deploy_file_found = True
         except Exception:
             pass
     elif DEPLOYMENTS_LOCAL_PATH.exists():
@@ -1430,31 +1436,61 @@ def get_chain_status_endpoint() -> Dict[str, Any]:
                     "treasury": d.get("treasury", ""),
                     "executor": d.get("executor", ""),
                 }
+                raw_fcid = d.get("chain_id")
+                file_chain_id = int(raw_fcid) if raw_fcid is not None and str(raw_fcid).isdigit() else None
+                deploy_file_found = True
         except Exception:
             pass
 
-    if not contracts.get("token"):
-        if PROOF_JSON_PATH.exists():
-            try:
-                with open(PROOF_JSON_PATH, "r", encoding="utf-8") as f:
-                    d = json.load(f)
-                    c_map = d.get("contracts", {})
-                    contracts = {
-                        k: (v.get("address") if isinstance(v, dict) else v)
-                        for k, v in c_map.items()
-                    }
-            except Exception:
-                pass
+    if not contracts.get("token") and PROOF_JSON_PATH.exists():
+        try:
+            with open(PROOF_JSON_PATH, "r", encoding="utf-8") as f:
+                d = json.load(f)
+                c_map = d.get("contracts", {})
+                contracts = {
+                    k: (v.get("address") if isinstance(v, dict) else v)
+                    for k, v in c_map.items()
+                }
+                raw_fcid = d.get("chain_id")
+                file_chain_id = int(raw_fcid) if raw_fcid is not None and str(raw_fcid).isdigit() else None
+        except Exception:
+            pass
+
+    # Verify on-chain bytecode for each contract
+    def _contract_has_code(addr: Optional[str]) -> bool:
+        if not connected or not addr:
+            return False
+        try:
+            cs_addr = Web3.to_checksum_address(addr)
+            code = call_with_rpc_retry(lambda: w3.eth.get_code(cs_addr))
+            if isinstance(code, (bytes, bytearray)):
+                return len(code) > 0 and code not in (b"\x00", b"")
+            code_str = str(code).strip().lower()
+            return len(code_str) > 2 and code_str not in ("0x", "0x0", "0x00")
+        except Exception:
+            return False
+
+    contract_status: Dict[str, Dict[str, Any]] = {}
+    for key in ["token", "registry", "treasury", "executor"]:
+        addr = contracts.get(key, "")
+        has_code = _contract_has_code(addr)
+        contract_status[key] = {
+            "address": addr,
+            "has_code": has_code,
+        }
+
+    # chain_id must match and all four contracts must have non-empty bytecode
+    chain_id_matches = bool(
+        deploy_file_found
+        and file_chain_id is not None
+        and chain_id is not None
+        and file_chain_id == chain_id
+    )
+    all_have_code = all(contract_status[k]["has_code"] for k in ["token", "registry", "treasury", "executor"])
+    contracts_deployed = bool(chain_id_matches and all_have_code)
 
     from app.chain.public import get_explorer_base
     explorer_base = get_explorer_base(chain_id or 31337)
-
-    contracts_deployed = bool(
-        contracts.get("token")
-        and contracts.get("registry")
-        and contracts.get("treasury")
-        and contracts.get("executor")
-    )
 
     result = {
         "chain_id": chain_id,
@@ -1463,6 +1499,7 @@ def get_chain_status_endpoint() -> Dict[str, Any]:
         "rpc_health": rpc_health,
         "chain_mode": "proof" if (chain_mode == "proof" or (chain_id and chain_id not in {31337, 1337})) else "local",
         "contracts_deployed": contracts_deployed,
+        "contracts": contract_status,
         "contract_addresses": contracts,
         "explorer_base": explorer_base,
     }

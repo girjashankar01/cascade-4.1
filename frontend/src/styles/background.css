@@ -1,4 +1,4 @@
-/* Signature Visual Feature: Animated Technical Grid with Travelling Lines */
+/* Signature Visual Feature: Technical Grid with Travelling Lines */
 
 .technical-background {
   position: fixed;
@@ -6,7 +6,7 @@
   pointer-events: none;
   z-index: 0;
   overflow: hidden;
-  background-color: var(--bg-app);
+  background-color: var(--color-canvas);
 }
 
 /* Base Technical Square Grid */
@@ -14,10 +14,15 @@
   position: absolute;
   inset: 0;
   background-image: 
-    linear-gradient(to right, rgba(180, 195, 215, 0.04) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(180, 195, 215, 0.04) 1px, transparent 1px);
+    linear-gradient(to right, var(--color-divider) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-divider) 1px, transparent 1px);
   background-size: 48px 48px;
   background-position: center top;
+  opacity: 0.35;
+}
+
+:root[data-theme='dark'] .technical-grid {
+  opacity: 0.15;
 }
 
 /* Subtle Radial Illumination around top workbench area */
@@ -28,15 +33,15 @@
   transform: translateX(-50%);
   width: 1000px;
   height: 600px;
-  background: radial-gradient(ellipse 600px 350px at 50% 30%, rgba(124, 224, 190, 0.045), transparent 70%);
-  opacity: 0.8;
+  background: radial-gradient(ellipse 600px 350px at 50% 30%, var(--color-attention-surface), transparent 70%);
+  opacity: 0.45;
 }
 
 /* Vignette Mask fading grid out towards the edges and bottom */
 .technical-mask {
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 50% 40%, transparent 40%, var(--bg-app) 95%);
+  background: radial-gradient(circle at 50% 40%, transparent 40%, var(--color-canvas) 95%);
 }
 
 /* Travelling Lines Layer */
@@ -52,20 +57,20 @@
   height: 1px;
   background: linear-gradient(90deg, 
     transparent 0%, 
-    rgba(124, 224, 190, 0.0) 30%, 
-    rgba(124, 224, 190, 0.35) 50%, 
-    rgba(124, 224, 190, 0.0) 70%, 
+    rgba(242, 179, 92, 0.0) 30%, 
+    var(--color-action) 50%, 
+    rgba(242, 179, 92, 0.0) 70%, 
     transparent 100%
   );
   background-size: 300px 1px;
   background-repeat: no-repeat;
-  opacity: 0.6;
-  animation: travel-horizontal 12s infinite linear;
+  opacity: 0.35;
+  animation: travel-horizontal 14s infinite linear;
 }
 
 .line-h1 { top: 96px; animation-duration: 14s; animation-delay: 0s; }
 .line-h2 { top: 288px; animation-duration: 18s; animation-delay: 4s; }
-.line-h3 { top: 576px; animation-duration: 22s; animation-delay: 9s; opacity: 0.3; }
+.line-h3 { top: 576px; animation-duration: 22s; animation-delay: 9s; opacity: 0.2; }
 
 .travelling-line-v {
   position: absolute;
@@ -74,15 +79,15 @@
   width: 1px;
   background: linear-gradient(180deg, 
     transparent 0%, 
-    rgba(124, 224, 190, 0.0) 30%, 
-    rgba(124, 224, 190, 0.3) 50%, 
-    rgba(124, 224, 190, 0.0) 70%, 
+    rgba(242, 179, 92, 0.0) 30%, 
+    var(--color-action) 50%, 
+    rgba(242, 179, 92, 0.0) 70%, 
     transparent 100%
   );
   background-size: 1px 300px;
   background-repeat: no-repeat;
-  opacity: 0.5;
-  animation: travel-vertical 14s infinite linear;
+  opacity: 0.3;
+  animation: travel-vertical 16s infinite linear;
 }
 
 .line-v1 { left: calc(50% - 384px); animation-duration: 16s; animation-delay: 1s; }
@@ -98,11 +103,12 @@
   100% { background-position: 0 calc(100vh + 300px); }
 }
 
-/* Reduced motion preference */
+:root[data-reduce-motion='true'] .travelling-lines {
+  display: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .travelling-line-h,
-  .travelling-line-v {
-    animation: none;
+  .travelling-lines {
     display: none;
   }
 }

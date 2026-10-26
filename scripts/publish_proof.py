@@ -115,6 +115,8 @@ def preflight_checks(
     payout_amount: int,
     already_executed: bool = False,
     dry_run: bool = False,
+    deployments: Optional[Dict[str, Any]] = None,
+    deployments_path: Optional[Path] = None,
 ) -> None:
     """Validate network, account balances, and treasury reserves.
 
@@ -123,6 +125,45 @@ def preflight_checks(
     Verifier balance is info-only (off-chain EIP-712 signer).
     """
     failures: List[str] = []
+
+    # 0. Deployment manifest & contract bytecode verification
+    if deployments_path is not None and not deployments_path.exists():
+        failures.append(f"Deployment manifest {deployments_path} is missing")
+    elif deployments is None or not isinstance(deployments, dict):
+        failures.append("Deployment manifest is missing or invalid")
+    else:
+        file_chain_id = deployments.get("chain_id")
+        if file_chain_id is not None:
+            try:
+                fcid_int = int(file_chain_id)
+                if fcid_int != expected_chain_id:
+                    failures.append(f"Deployment manifest chain ID {fcid_int} does not match expected {expected_chain_id}")
+            except (ValueError, TypeError):
+                failures.append(f"Deployment manifest has invalid chain ID: {file_chain_id}")
+
+        for c_name, c_key in [
+            ("MockToken", "token"),
+            ("GovernanceRegistry", "registry"),
+            ("Treasury", "treasury"),
+            ("GuardedExecutor", "executor"),
+        ]:
+            c_addr = deployments.get(c_key)
+            if not c_addr:
+                failures.append(f"Deployment manifest missing contract {c_name} ({c_key})")
+                continue
+            try:
+                cs_addr = to_checksum_address(c_addr)
+                code = w3.eth.get_code(cs_addr)
+                has_code = False
+                if isinstance(code, (bytes, bytearray)):
+                    has_code = len(code) > 0 and code not in (b"\x00", b"")
+                else:
+                    code_str = str(code).strip().lower()
+                    has_code = len(code_str) > 2 and code_str not in ("0x", "0x0", "0x00")
+                if not has_code:
+                    failures.append(f"Contract {c_name} at {c_addr} has no bytecode deployed on-chain")
+            except Exception as e:
+                failures.append(f"Could not verify bytecode for {c_name} at {c_addr}: {e}")
 
     # 1. Chain ID check
     try:
@@ -134,6 +175,8 @@ def preflight_checks(
 
     # 2. Broadcaster accounts (Proposer and Governance)
     for role_name, addr in [("Proposer", proposer_addr), ("Governance", governance_addr)]:
+        if not addr:
+            continue
         try:
             bal = w3.eth.get_balance(to_checksum_address(addr))
             if bal <= MIN_NATIVE_BALANCE_WEI:
@@ -145,16 +188,17 @@ def preflight_checks(
             failures.append(f"Could not query {role_name} balance: {e}")
 
     # 3. Verifier balance (Info only)
-    try:
-        v_bal = w3.eth.get_balance(to_checksum_address(verifier_addr))
-        logger.info(f"Verifier ({verifier_addr}) balance: {Web3.from_wei(v_bal, 'ether')} ETH (off-chain EIP-712 signer)")
-    except Exception as e:
-        logger.debug(f"Could not query verifier balance: {e}")
+    if verifier_addr:
+        try:
+            v_bal = w3.eth.get_balance(to_checksum_address(verifier_addr))
+            logger.info(f"Verifier ({verifier_addr}) balance: {Web3.from_wei(v_bal, 'ether')} ETH (off-chain EIP-712 signer)")
+        except Exception as e:
+            logger.debug(f"Could not query verifier balance: {e}")
 
     # 4. Treasury token reserves
     if already_executed:
         logger.info("Proposal already executed on-chain; bypassing treasury balance preflight check.")
-    else:
+    elif token_contract is not None and treasury_addr:
         try:
             treasury_bal = token_contract.functions.balanceOf(to_checksum_address(treasury_addr)).call()
             if treasury_bal < payout_amount:
@@ -198,14 +242,17 @@ def capture_snapshot_balances(
 
     t_tok = 0
     r_tok = 0
-    try:
-        t_tok = token_contract.functions.balanceOf(to_checksum_address(treasury_addr)).call()
-    except Exception:
-        pass
-    try:
-        r_tok = token_contract.functions.balanceOf(to_checksum_address(recipient_addr)).call()
-    except Exception:
-        pass
+    if token_contract is not None:
+        try:
+            raw_t = token_contract.functions.balanceOf(to_checksum_address(treasury_addr)).call()
+            t_tok = int(raw_t) if isinstance(raw_t, (int, float)) or (isinstance(raw_t, str) and str(raw_t).isdigit()) else (raw_t if isinstance(raw_t, int) else 0)
+        except Exception:
+            t_tok = 0
+        try:
+            raw_r = token_contract.functions.balanceOf(to_checksum_address(recipient_addr)).call()
+            r_tok = int(raw_r) if isinstance(raw_r, (int, float)) or (isinstance(raw_r, str) and str(raw_r).isdigit()) else (raw_r if isinstance(raw_r, int) else 0)
+        except Exception:
+            r_tok = 0
 
     return {
         "roles": roles,
@@ -317,56 +364,39 @@ def publish_proof(
     dep_file = Path(deployments_path) if deployments_path else REPO_ROOT / "data" / "deployments.proof.json"
     proof_out = Path(proof_path) if proof_path else REPO_ROOT / "data" / "proof.json"
 
-    if not dep_file.exists():
-        if dry_run:
-            fallback_dep = REPO_ROOT / "data" / "deployments.json"
-            if fallback_dep.exists():
-                logger.info(f"[DRY-RUN] {dep_file} not found; using fallback {fallback_dep}")
-                with open(fallback_dep, "r", encoding="utf-8") as f:
-                    deployments = json.load(f)
-            else:
-                logger.info(f"[DRY-RUN] {dep_file} not found; using simulated addresses")
-                deployments = {
-                    "token": "0x82a17a76c921F9a49649699e087eEBa406Fde85f",
-                    "registry": "0xaB94d77Cb9DC2c305441abfC988cFA7271b81ACB",
-                    "treasury": "0x8DdCC593fa48Eaee2268baA6b12E37A8B28cE24a",
-                    "executor": "0x141BC887305375Ee6f61068988B928e936EF4097",
-                }
-        else:
-            raise FileNotFoundError(
-                f"Deployment manifest not found at {dep_file}. "
-                "Please deploy the contracts to the network first (e.g. via DeployProof.s.sol) "
-                "and run scripts/write_proof_deployments.py."
-            )
-    else:
-        with open(dep_file, "r", encoding="utf-8") as f:
-            deployments = json.load(f)
-
     # 1. Initialize Web3 and Proof Configuration
     w3_custom = Web3(Web3.HTTPProvider(rpc_url)) if rpc_url else None
     cfg = load_proof_env(path=env_file, w3=w3_custom)
     w3 = cfg.w3 or Web3(Web3.HTTPProvider(cfg.rpc_url))
 
-    token_addr = to_checksum_address(deployments["token"])
-    registry_addr = to_checksum_address(deployments["registry"])
-    treasury_addr = to_checksum_address(deployments["treasury"])
-    executor_addr = to_checksum_address(deployments["executor"])
+    deployments: Optional[Dict[str, Any]] = None
+    if dep_file.exists():
+        try:
+            with open(dep_file, "r", encoding="utf-8") as f:
+                deployments = json.load(f)
+        except Exception as e:
+            logger.warning(f"Could not parse deployment file {dep_file}: {e}")
+
+    token_addr = to_checksum_address(deployments["token"]) if deployments and deployments.get("token") else ""
+    registry_addr = to_checksum_address(deployments["registry"]) if deployments and deployments.get("registry") else ""
+    treasury_addr = to_checksum_address(deployments["treasury"]) if deployments and deployments.get("treasury") else ""
+    executor_addr = to_checksum_address(deployments["executor"]) if deployments and deployments.get("executor") else ""
 
     proposer_pk = cfg.proposer_pk
     governance_pk = cfg.governance_pk
     verifier_pk = cfg.verifier_pk
 
-    proposer_addr = Account.from_key(proposer_pk).address
-    governance_addr = Account.from_key(governance_pk).address
-    verifier_addr = Account.from_key(verifier_pk).address
+    proposer_addr = Account.from_key(proposer_pk).address if proposer_pk else ""
+    governance_addr = Account.from_key(governance_pk).address if governance_pk else ""
+    verifier_addr = Account.from_key(verifier_pk).address if verifier_pk else ""
 
     token_artifact = load_artifact("MockToken")
     registry_artifact = load_artifact("GovernanceRegistry")
     executor_artifact = load_artifact("GuardedExecutor")
 
-    token_contract = w3.eth.contract(address=token_addr, abi=token_artifact["abi"])
-    registry_contract = w3.eth.contract(address=registry_addr, abi=registry_artifact["abi"])
-    executor_contract = w3.eth.contract(address=executor_addr, abi=executor_artifact["abi"])
+    token_contract = w3.eth.contract(address=token_addr, abi=token_artifact["abi"]) if token_addr else None
+    registry_contract = w3.eth.contract(address=registry_addr, abi=registry_artifact["abi"]) if registry_addr else None
+    executor_contract = w3.eth.contract(address=executor_addr, abi=executor_artifact["abi"]) if executor_addr else None
 
     # Resumability: load existing proof.json if present
     existing_proof: Dict[str, Any] = {}
@@ -393,10 +423,11 @@ def publish_proof(
 
     # Check if already executed on-chain
     is_already_executed = False
-    try:
-        is_already_executed = executor_contract.functions.executed(pid_b32).call()
-    except Exception:
-        is_already_executed = False
+    if executor_contract:
+        try:
+            is_already_executed = executor_contract.functions.executed(pid_b32).call()
+        except Exception:
+            is_already_executed = False
 
     # Step 0: Preflight verification
     preflight_checks(
@@ -410,6 +441,8 @@ def publish_proof(
         payout_amount=DEFAULT_AMOUNT_RAW,
         already_executed=is_already_executed,
         dry_run=dry_run,
+        deployments=deployments,
+        deployments_path=dep_file,
     )
 
     # Build Manifest and Hashes exactly matching Scenario A
@@ -659,6 +692,7 @@ def publish_proof(
             "expected": "success (status 1)",
         }
         transactions.append(commit_record)
+        print(f"STEP: commit_version | TX: {res_commit['tx_hash']} | STATUS: {res_commit['status']} | EXPLORER: {commit_record['explorer_url']}")
         log_tx_to_chain_txs(
             run_id=run_id,
             step="commit_version",
@@ -704,6 +738,7 @@ def publish_proof(
             "expected": "success (status 1)",
         }
         transactions.append(approve_record)
+        print(f"STEP: approve | TX: {res_approve['tx_hash']} | STATUS: {res_approve['status']} | EXPLORER: {approve_record['explorer_url']}")
         log_tx_to_chain_txs(
             run_id=run_id,
             step="approve",
@@ -749,6 +784,7 @@ def publish_proof(
             "expected": "revert (action mismatch)",
         }
         transactions.append(b1_record)
+        print(f"STEP: b1_adversarial_execute | TX: {tx_h_b1} | STATUS: {res_b1['status']} (revert: {rev_b1}) | EXPLORER: {b1_record['explorer_url']}")
         if res_b1.get("tx_hash"):
             log_tx_to_chain_txs(
                 run_id=run_id,
@@ -805,6 +841,7 @@ def publish_proof(
             "expected": "success (status 1)",
         }
         transactions.append(valid_record)
+        print(f"STEP: valid_execute | TX: {res_valid['tx_hash']} | STATUS: {res_valid['status']} | EXPLORER: {valid_record['explorer_url']}")
         log_tx_to_chain_txs(
             run_id=run_id,
             step="valid_execute",
@@ -851,6 +888,7 @@ def publish_proof(
                 "expected": "revert (already executed)",
             }
             transactions.append(replay_record)
+            print(f"STEP: replay_execute | TX: {tx_h_replay} | STATUS: {res_replay['status']} (revert: {rev_replay}) | EXPLORER: {replay_record['explorer_url']}")
             if res_replay.get("tx_hash"):
                 log_tx_to_chain_txs(
                     run_id=run_id,

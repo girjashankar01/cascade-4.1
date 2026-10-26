@@ -1,10 +1,4 @@
-import {
-  CpuIcon,
-  FileTextIcon,
-  LayersIcon,
-  ActivityIcon,
-  ShieldIcon,
-} from '../common/Icons';
+import { Icon, type IconName } from '../ui/Icon';
 
 export type NavTab = 'overview' | 'execution' | 'proposals' | 'manifest' | 'audit';
 
@@ -20,7 +14,7 @@ function getNetworkLabel(chainId?: number | null): string {
   if (chainId === 11155111) return 'Sepolia';
   if (chainId === 84532) return 'Base Sepolia';
   if (chainId === 80002) return 'Polygon Amoy';
-  if (chainId === 31337) return 'Anvil';
+  if (chainId === 31337) return 'Anvil Local';
   return `Chain ${chainId}`;
 }
 
@@ -30,12 +24,12 @@ export function Sidebar({
   chainInfo,
   onSelectTab,
 }: SidebarProps) {
-  const navItems: { id: NavTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    { id: 'overview', label: 'Overview', icon: ShieldIcon },
-    { id: 'execution', label: 'Execution Workbench', icon: CpuIcon },
-    { id: 'proposals', label: 'Proposals & Evidence', icon: FileTextIcon },
-    { id: 'manifest', label: 'Manifests & Versions', icon: LayersIcon },
-    { id: 'audit', label: 'Audit Explorer', icon: ActivityIcon },
+  const navItems: { id: NavTab; label: string; icon: IconName }[] = [
+    { id: 'overview', label: 'Overview', icon: 'workspace' },
+    { id: 'execution', label: 'Execution Workbench', icon: 'lock' },
+    { id: 'proposals', label: 'Proposals & Evidence', icon: 'edit' },
+    { id: 'manifest', label: 'Manifests & Versions', icon: 'result' },
+    { id: 'audit', label: 'Audit Explorer', icon: 'balances' },
   ];
 
   return (
@@ -43,7 +37,7 @@ export function Sidebar({
       {/* Branding */}
       <div className="sidebar-brand">
         <div className="brand-symbol" aria-hidden="true">
-          <ShieldIcon width={16} height={16} />
+          <Icon name="lock" />
         </div>
         <div className="brand-text-wrap">
           <span className="brand-title">CASCADE</span>
@@ -54,7 +48,6 @@ export function Sidebar({
       {/* Navigation Links */}
       <nav className="sidebar-nav">
         {navItems.map((item) => {
-          const Icon = item.icon;
           const isActive = currentTab === item.id;
           return (
             <button
@@ -63,7 +56,7 @@ export function Sidebar({
               className={`nav-item ${isActive ? 'active' : ''}`}
               onClick={() => onSelectTab(item.id)}
             >
-              <Icon className="nav-icon" />
+              <Icon name={item.icon} className="nav-icon" />
               <span>{item.label}</span>
             </button>
           );
@@ -80,14 +73,16 @@ export function Sidebar({
           <span className={`status-dot ${chainInfo?.connected ? 'online' : 'offline'}`} />
           <span>
             Chain: {chainInfo?.connected
-              ? `${getNetworkLabel(chainInfo.chainId)} (${chainInfo.chainId ?? '?'}) · #${chainInfo.blockNumber ?? '?'}`
+              ? `${getNetworkLabel(chainInfo.chainId)} · #${chainInfo.blockNumber ?? '?'}`
               : 'Disconnected'}
           </span>
         </div>
-        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
-          CASCADE v0.2.0 · Stage 5
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-muted)', marginTop: '4px', fontFamily: 'var(--font-technical)' }}>
+          CASCADE 4.1 · Stage 5
         </div>
       </div>
     </aside>
   );
 }
+
+export default Sidebar;

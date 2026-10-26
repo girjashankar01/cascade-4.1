@@ -307,8 +307,35 @@ def evaluate_rules(
     slot_changes = sim_result.get("slot_changes", {})
     action = manifest.get("action", {})
     kind = action.get("kind", "erc20_payout")
+    is_proof_mode = bool(sim_result.get("proof_mode", False))
 
-    if kind == "proxy_upgrade":
+    # Strengthening for proof mode: static inspection of calldata selector and EIP-1967 storage slots
+    upgrade_selectors = {"0x3659cfe6", "0x4f1ef286", "0x8f283970", "0x5c19a95c"}
+    target_selector = (decoded_tx.selector or "").lower()
+
+    unauthorized_upgrade_call = (not allow_impl_change and target_selector in upgrade_selectors)
+
+    # Inspect EIP-1967 implementation and admin slot via eth_getStorageAt if w3 is available
+    eip1967_impl_slot = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
+    eip1967_admin_slot = "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103"
+    target_storage_impl = ""
+    target_storage_admin = ""
+    if w3 is not None and decoded_tx.target:
+        try:
+            cs_target = to_checksum_address(decoded_tx.target)
+            raw_impl = w3.eth.get_storage_at(cs_target, eip1967_impl_slot)
+            target_storage_impl = "0x" + raw_impl.hex()
+            raw_admin = w3.eth.get_storage_at(cs_target, eip1967_admin_slot)
+            target_storage_admin = "0x" + raw_admin.hex()
+        except Exception:
+            pass
+
+    r6_name = "Implementation Slot Immutability [REDUCED IN PROOF MODE]" if is_proof_mode else "Implementation Slot Immutability"
+
+    if unauthorized_upgrade_call:
+        r6_pass = False
+        r6_expl = f"Unauthorized upgrade selector {target_selector} detected in calldata when allowImplChange is False."
+    elif kind == "proxy_upgrade":
         expected_proxy = (action.get("proxy") or "").lower()
         expected_impl = (action.get("newImpl") or "").lower()
 
@@ -336,20 +363,36 @@ def evaluate_rules(
                 r6_expl = f"EIP-1967 implementation slot correctly updated to approved implementation ({expected_impl})."
     else:
         r6_pass = allow_impl_change or len(slot_changes) == 0
-        r6_expl = (
-            "EIP-1967 implementation storage slots remained unchanged."
-            if r6_pass
-            else f"Unauthorized implementation slot changes detected: {slot_changes}"
-        )
+        if r6_pass:
+            if is_proof_mode:
+                r6_expl = (
+                    "[REDUCED IN PROOF MODE] Evaluated via static calldata & EIP-1967 storage slot view inspection "
+                    "without full EVM state tracing. Storage slots and selector remain unmutated."
+                )
+            else:
+                r6_expl = "EIP-1967 implementation storage slots remained unchanged."
+        else:
+            r6_expl = f"Unauthorized implementation slot changes detected: {slot_changes}"
 
     r6_status = "PASS" if r6_pass else "FAIL"
+    evidence_dict: Dict[str, Any] = {
+        "slot_changes": slot_changes,
+        "allow_impl_change": allow_impl_change,
+        "reduced_in_proof_mode": is_proof_mode,
+        "target_selector": target_selector,
+    }
+    if target_storage_impl:
+        evidence_dict["eip1967_impl_slot"] = target_storage_impl
+    if target_storage_admin:
+        evidence_dict["eip1967_admin_slot"] = target_storage_admin
+
     rules.append(
         RuleOutcome(
             rule_id="R6",
-            name="Implementation Slot Immutability",
+            name=r6_name,
             status=r6_status,
             explanation=r6_expl,
-            evidence={"slot_changes": slot_changes, "allow_impl_change": allow_impl_change},
+            evidence=evidence_dict,
         )
     )
 

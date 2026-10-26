@@ -1,0 +1,344 @@
+/* Cascade 4.1 Native UI Components */
+/* Authored with standard HTML5 elements, CSS variables, and zero external widget kits */
+
+/* 1. Button */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-height);
+  padding: var(--space-3) var(--space-5);
+  gap: var(--space-3);
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid transparent;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--motion-duration-quick) var(--motion-ease),
+              background-color var(--motion-duration-quick) var(--motion-ease),
+              border-color var(--motion-duration-quick) var(--motion-ease),
+              box-shadow var(--motion-duration-quick) var(--motion-ease);
+}
+
+.btn:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* Primary Button */
+.btn-primary {
+  background-color: var(--color-action);
+  color: var(--color-action-ink);
+  border-color: var(--color-action-border);
+  box-shadow: var(--shadow-control);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--color-action-hover);
+}
+
+.btn-primary:active:not(:disabled) {
+  background-color: var(--color-action-active);
+  transform: translateY(var(--motion-press-y));
+  box-shadow: none;
+}
+
+/* Secondary Button */
+.btn-secondary {
+  background-color: transparent;
+  color: var(--color-text);
+  border-color: var(--color-control-border);
+  box-shadow: none;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--color-recessed);
+}
+
+.btn-secondary:active:not(:disabled) {
+  background-color: var(--color-recessed);
+  transform: translateY(var(--motion-press-y));
+}
+
+/* Quiet Button */
+.btn-quiet,
+.btn-ghost {
+  background-color: transparent;
+  color: var(--color-text);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.btn-quiet:hover:not(:disabled),
+.btn-ghost:hover:not(:disabled) {
+  background-color: var(--color-recessed);
+}
+
+.btn-quiet:active:not(:disabled),
+.btn-ghost:active:not(:disabled) {
+  background-color: var(--color-recessed);
+  transform: translateY(var(--motion-press-y));
+}
+
+/* Small Button Modifier */
+.btn-sm {
+  min-height: 2.25rem;
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.875rem;
+  gap: var(--space-2);
+}
+
+/* Disabled State */
+.btn:disabled {
+  background-color: var(--color-recessed) !important;
+  color: var(--color-muted) !important;
+  border-color: var(--color-control-border) !important;
+  cursor: not-allowed;
+  opacity: 0.65;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* 2. Vector Icon */
+.icon {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.icon-brand {
+  width: var(--brand-size);
+  height: var(--brand-size);
+}
+
+/* 3. VerdictMark / StatusMark */
+.status-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1.25;
+  white-space: nowrap;
+  border: var(--border-width) solid transparent;
+}
+
+.status-mark-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex-shrink: 0;
+}
+
+.status-mark-verified {
+  color: var(--color-allowed);
+  background-color: var(--color-allowed-surface);
+  border-color: var(--color-allowed);
+}
+
+.status-mark-mismatch {
+  color: var(--color-blocked);
+  background-color: var(--color-blocked-surface);
+  border-color: var(--color-blocked);
+}
+
+.status-mark-unsupported {
+  color: var(--color-attention);
+  background-color: var(--color-attention-surface);
+  border-color: var(--color-attention);
+}
+
+.status-mark-uncertain {
+  color: var(--color-muted);
+  background-color: var(--color-recessed);
+  border-color: var(--color-control-border);
+}
+
+.status-mark-compact {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8125rem;
+}
+
+/* 4. Lock Artwork Container */
+.lock-frame {
+  width: min(100%, var(--lock-width));
+  aspect-ratio: var(--lock-ratio);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lock-object {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.lock-fallback {
+  width: var(--lock-fallback-size);
+  height: var(--lock-fallback-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-muted);
+}
+
+.lock-fallback .icon {
+  width: 100%;
+  height: 100%;
+}
+
+/* 5. Native Form Controls: Radio & Checkbox */
+input[type='radio'],
+input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: var(--field-border-width) solid var(--color-control-border);
+  background-color: var(--color-canvas);
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  vertical-align: middle;
+  transition: border-color var(--motion-duration-quick) var(--motion-ease),
+              background-color var(--motion-duration-quick) var(--motion-ease);
+}
+
+input[type='radio'] {
+  border-radius: 50%;
+}
+
+input[type='radio']::before {
+  content: '';
+  width: var(--radio-dot-size);
+  height: var(--radio-dot-size);
+  border-radius: 50%;
+  transform: scale(0);
+  transition: transform var(--motion-duration-quick) var(--motion-ease);
+  background-color: var(--color-action-ink);
+}
+
+input[type='radio']:checked {
+  background-color: var(--color-action);
+  border-color: var(--color-action-border);
+}
+
+input[type='radio']:checked::before {
+  transform: scale(1);
+}
+
+input[type='checkbox'] {
+  border-radius: var(--radius-sm);
+}
+
+input[type='checkbox']::before {
+  content: '';
+  width: var(--check-width);
+  height: var(--check-height);
+  border: solid var(--color-action-ink);
+  border-width: 0 var(--check-stroke) var(--check-stroke) 0;
+  transform: rotate(45deg) scale(0);
+  margin-top: -2px;
+  transition: transform var(--motion-duration-quick) var(--motion-ease);
+}
+
+input[type='checkbox']:checked {
+  background-color: var(--color-action);
+  border-color: var(--color-action-border);
+}
+
+input[type='checkbox']:checked::before {
+  transform: rotate(45deg) scale(1);
+}
+
+input[type='radio']:focus-visible,
+input[type='checkbox']:focus-visible,
+input[type='text']:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-offset);
+}
+
+@media (forced-colors: active) {
+  input[type='radio'],
+  input[type='checkbox'] {
+    appearance: auto;
+    -webkit-appearance: auto;
+  }
+}
+
+/* 6. Text Input & Select */
+input[type='text'],
+input[type='number'],
+input[type='search'],
+select,
+textarea {
+  min-height: var(--control-height);
+  padding: 0 var(--space-4);
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  border: var(--field-border-width) solid var(--color-control-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+input[type='text']:focus,
+input[type='number']:focus,
+input[type='search']:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--color-focus);
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* 7. Dialog & Drawer */
+dialog::backdrop {
+  background: var(--dialog-backdrop);
+  backdrop-filter: blur(4px);
+}
+
+:root:has(dialog[open]) {
+  overflow: hidden;
+}
+
+.technical-drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(100%, var(--drawer-max));
+  height: 100%;
+  margin: 0;
+  max-height: none;
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  border: none;
+  border-left: var(--border-width) solid var(--color-divider);
+  box-shadow: var(--shadow-float);
+  padding: var(--space-6);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  font-family: var(--font-body);
+}
+
+.technical-drawer:not([open]) {
+  display: none;
+}

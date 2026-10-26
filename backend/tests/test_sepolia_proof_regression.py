@@ -117,7 +117,28 @@ def test_dry_run_does_not_pollute_db(tmp_path, monkeypatch):
         f.write("GOVERNANCE_PK=0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a\n")
         f.write("VERIFIER_PK=0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6\n")
 
-    with patch("publish_proof.preflight_checks", return_value=None):
+    mock_w3 = MagicMock()
+    mock_w3.is_connected.return_value = True
+    mock_w3.eth.chain_id = 31337
+    mock_w3.eth.get_block.return_value = {"timestamp": 1700000000}
+    mock_w3.eth.get_code.return_value = b"\x60\x80\x60\x40"
+    mock_w3.eth.contract.return_value.functions.balanceOf.return_value.call.return_value = 1_000_000 * 10**6
+    mock_w3.eth.get_balance.return_value = 10**18
+
+    with patch("publish_proof.load_proof_env") as mock_lpe, patch("publish_proof.preflight_checks", return_value=None):
+        from app.chain.public import ProofConfig
+        mock_lpe.return_value = ProofConfig(
+            chain_id=31337,
+            rpc_url="http://127.0.0.1:8545",
+            explorer_base="https://etherscan.io",
+            priority_fee_gwei=None,
+            deployer_pk="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+            proposer_pk="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+            governance_pk="0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a",
+            verifier_pk="0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6",
+            addresses={},
+            w3=mock_w3,
+        )
         res = publish_proof(
             run_id="testdryrun",
             dry_run=True,

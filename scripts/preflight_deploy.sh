@@ -36,7 +36,7 @@ else
         ACTUAL_CHAIN_ID=$(cast chain-id --rpc-url "$RPC_URL" 2>/dev/null || true)
     fi
     if [ -z "$ACTUAL_CHAIN_ID" ]; then
-        ACTUAL_CHAIN_ID=$(python3 -c "
+        ACTUAL_CHAIN_ID=$(uv run --project "$REPO_ROOT/backend" python -c "
 import sys
 from web3 import Web3
 try:
@@ -112,7 +112,7 @@ if [ -n "$DEPLOYER_ADDR" ] && [ -n "$RPC_URL" ]; then
         DEPLOYER_BAL_ETH=$(cast balance --ether "$DEPLOYER_ADDR" --rpc-url "$RPC_URL" 2>/dev/null || true)
     fi
     if [ -z "$DEPLOYER_BAL_ETH" ]; then
-        DEPLOYER_BAL_ETH=$(python3 -c "
+        DEPLOYER_BAL_ETH=$(uv run --project "$REPO_ROOT/backend" python -c "
 from web3 import Web3
 try:
     w3 = Web3(Web3.HTTPProvider('$RPC_URL'))
@@ -125,7 +125,7 @@ except Exception:
 
     if [ -n "$DEPLOYER_BAL_ETH" ]; then
         echo "[+] Deployer Balance:  $DEPLOYER_BAL_ETH ETH (Required: >= $REQUIRED_BALANCE_ETH ETH)"
-        IS_SUFFICIENT=$(python3 -c "print(1 if float('$DEPLOYER_BAL_ETH') >= float('$REQUIRED_BALANCE_ETH') else 0)" 2>/dev/null || echo "0")
+        IS_SUFFICIENT=$(uv run --project "$REPO_ROOT/backend" python -c "print(1 if float('$DEPLOYER_BAL_ETH') >= float('$REQUIRED_BALANCE_ETH') else 0)" 2>/dev/null || echo "0")
         if [ "$IS_SUFFICIENT" -eq 1 ]; then
             echo "[+] Balance Check:     PASSED"
         else
@@ -139,7 +139,13 @@ fi
 
 echo "================================================================================"
 if [ "$ERRORS" -eq 0 ]; then
-    echo "STATUS: PREFLIGHT PASSED. Ready to run forge script DeployProof.s.sol"
+    echo "STATUS: PREFLIGHT PASSED. Ready to run DeployProof.s.sol broadcast."
+    echo ""
+    echo "EXACT BROADCAST COMMAND TO RUN (Manual Broadcast Step):"
+    echo "  cd contracts && forge script script/DeployProof.s.sol \\"
+    echo "    --rpc-url \"$RPC_URL\" \\"
+    echo "    --account \"${DEPLOYER_ACCOUNT:-amoy-deployer}\" \\"
+    echo "    --broadcast"
     echo "================================================================================"
     exit 0
 else

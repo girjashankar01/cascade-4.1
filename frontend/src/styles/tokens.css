@@ -1,89 +1,50 @@
 /* Centralized Design Tokens for DAO Accountability Engine */
-/* Dark, precise, instrument-like security workbench theme */
+/* Uses the Cascade 4.1 Token System from design-extract */
+
+@import '../design/fonts.css';
+@import '../design/tokens.css';
 
 :root {
-  /* Colors: Backgrounds */
-  --bg-app: #080a0d;
-  --bg-sidebar: #0d1015;
-  --bg-surface: #11161d;
-  --bg-surface-raised: #151b23;
-  --bg-surface-overlay: #1c232e;
-  --bg-surface-hover: #19212b;
-  --bg-surface-active: #212b38;
+  /* Backward Compatibility Aliases mapping legacy variables to the new tokens */
+  --bg-app: var(--color-canvas);
+  --bg-sidebar: var(--color-canvas);
+  --bg-surface: var(--color-surface);
+  --bg-surface-raised: var(--color-recessed);
+  --bg-surface-overlay: var(--color-surface);
+  --bg-surface-hover: var(--color-recessed);
+  --bg-surface-active: var(--color-recessed);
 
-  /* Colors: Borders */
-  --border-subtle: rgba(180, 195, 215, 0.08);
-  --border-default: rgba(180, 195, 215, 0.14);
-  --border-hover: rgba(180, 195, 215, 0.24);
-  --border-active: rgba(124, 224, 190, 0.5);
+  --border-subtle: var(--color-divider);
+  --border-default: var(--color-control-border);
+  --border-hover: var(--color-control-border);
+  --border-active: var(--color-action-border);
 
-  /* Colors: Typography */
-  --text-primary: #e8edf4;
-  --text-secondary: #929dad;
-  --text-muted: #657184;
-  --text-subtle: #475366;
-  --text-inverse: #080a0d;
+  --text-primary: var(--color-text);
+  --text-secondary: var(--color-muted);
+  --text-muted: var(--color-muted);
+  --text-subtle: var(--color-muted);
+  --text-inverse: var(--color-action-ink);
 
-  /* Colors: Accent & Brand */
-  --accent-mint: #7ce0be;
-  --accent-mint-dim: rgba(124, 224, 190, 0.15);
-  --accent-mint-glow: rgba(124, 224, 190, 0.3);
+  --accent-mint: var(--color-action);
+  --accent-mint-dim: var(--color-attention-surface);
+  --accent-mint-glow: rgba(242, 179, 92, 0.25);
 
-  /* Semantic Status: Verified / Pass */
-  --status-verified-text: #6ee7b7;
-  --status-verified-bg: rgba(16, 185, 129, 0.12);
-  --status-verified-border: rgba(16, 185, 129, 0.35);
+  --status-verified-text: var(--color-allowed);
+  --status-verified-bg: var(--color-allowed-surface);
+  --status-verified-border: var(--color-allowed);
 
-  /* Semantic Status: Mismatch / Fail */
-  --status-mismatch-text: #fca5a5;
-  --status-mismatch-bg: rgba(239, 68, 68, 0.12);
-  --status-mismatch-border: rgba(239, 68, 68, 0.35);
+  --status-mismatch-text: var(--color-blocked);
+  --status-mismatch-bg: var(--color-blocked-surface);
+  --status-mismatch-border: var(--color-blocked);
 
-  /* Semantic Status: Uncertain / Warning */
-  --status-uncertain-text: #fcd34d;
-  --status-uncertain-bg: rgba(245, 158, 11, 0.12);
-  --status-uncertain-border: rgba(245, 158, 11, 0.35);
+  --status-uncertain-text: var(--color-attention);
+  --status-uncertain-bg: var(--color-attention-surface);
+  --status-uncertain-border: var(--color-attention);
 
-  /* Semantic Status: Unsupported / Neutral */
-  --status-unsupported-text: #94a3b8;
-  --status-unsupported-bg: rgba(148, 163, 184, 0.12);
-  --status-unsupported-border: rgba(148, 163, 184, 0.3);
+  --status-unsupported-text: var(--color-muted);
+  --status-unsupported-bg: var(--color-recessed);
+  --status-unsupported-border: var(--color-control-border);
 
-  /* Typography Scale */
-  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, Monaco, monospace;
-
-  --text-xs: 0.72rem;
-  --text-sm: 0.82rem;
-  --text-base: 0.92rem;
-  --text-md: 1.05rem;
-  --text-lg: 1.25rem;
-  --text-xl: 1.5rem;
-  --text-2xl: 1.85rem;
-
-  /* Spacing */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-
-  /* Borders & Radii */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
-  --radius-full: 9999px;
-
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
-
-  /* Transitions */
-  --transition-fast: 150ms cubic-bezier(0.16, 1, 0.3, 1);
-  --transition-normal: 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-technical);
 }

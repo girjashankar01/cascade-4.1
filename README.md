@@ -4,7 +4,7 @@
 > Proving that what a DAO actually executes matches what voters were asked to approve.
 
 [![Foundry Tests](https://img.shields.io/badge/Foundry%20Tests-28%2F28%20Passing-brightgreen)](file:///Users/althea/Developer/Projects/iiitn-cascade/cascade4.1/contracts)
-[![Backend Pytest](https://img.shields.io/badge/Backend%20Pytest-141%2F141%20Passing-brightgreen)](file:///Users/althea/Developer/Projects/iiitn-cascade/cascade4.1/backend)
+[![Backend Pytest](https://img.shields.io/badge/Backend%20Pytest-158%2F158%20Passing-brightgreen)](file:///Users/althea/Developer/Projects/iiitn-cascade/cascade4.1/backend)
 [![Frontend Build](https://img.shields.io/badge/Frontend-Vite%20%2B%20Oxlint%20Clean-brightgreen)](file:///Users/althea/Developer/Projects/iiitn-cascade/cascade4.1/frontend)
 [![Solidity](https://img.shields.io/badge/Solidity-0.8.30-blue)](file:///Users/althea/Developer/Projects/iiitn-cascade/cascade4.1/contracts)
 [![Python](https://img.shields.io/badge/Python-3.11%20(uv)-blue)](file:///Users/althea/Developer/Projects/iiitn-cascade/cascade4.1/backend)
@@ -420,22 +420,122 @@ git diff --check
 
 ---
 
-## 11. Public Testnet Verification Proof (`docs/proof.json`)
+## 11. Running on Ethereum Sepolia (Proof Mode)
 
-In addition to local Anvil execution, CASCADE 4.1 supports publishing immutable cryptographic verification proofs to public EVM testnets:
-- **Ethereum Sepolia** (`CHAIN_ID=11155111`)
-- **Base Sepolia** (`CHAIN_ID=84532`)
-- **Polygon Amoy** (`CHAIN_ID=80002`)
+In addition to local Anvil execution, CASCADE 4.1 supports publishing immutable cryptographic verification proofs to public EVM testnets (primarily **Ethereum Sepolia**, `CHAIN_ID=11155111`). In Proof Mode (`CHAIN_MODE=proof`), transactions are signed and mined on public Ethereum testnet infrastructure using EIP-1559 type-2 transactions.
 
-### Published Proof Artifact
+### Operational Sequence
+
+The entire deployment, verification, and proof publishing lifecycle is managed via canonical `make` targets:
+
+```bash
+# 1. Validate RPC connectivity, account keystore, balances (>0.002 Sepolia ETH), and config
+make preflight
+
+# 2. Display manual Foundry broadcast command (never broadcasts automatically to prevent unintended gas expenditure)
+make deploy
+
+# [Execute the manual broadcast command printed by make deploy]
+# cd contracts && forge script script/DeployProof.s.sol --rpc-url "$AMOY_RPC" --account "${DEPLOYER_ACCOUNT:-amoy-deployer}" --broadcast
+
+# 3. Parse broadcast run-latest.json into data/deployments.proof.json with bytecode validation
+make record
+
+# 4. Verify on-chain contract wiring and bytecode (view calls only; zero gas spent)
+make verify-deploy
+
+# 5. Dry-run proof publishing (generates docs/dryrun.json; 0 transactions broadcast)
+make dry-run
+
+# 6. Broadcast full verification proof to Sepolia with B1 attack and replay check
+make proof
+
+# 7. Independently validate receipts, status codes, balance deltas, and zero secret leakage
+make check-proof
+
+# 8. Start FastAPI backend in proof mode (port 8000)
+make api
+
+# 9. Start Vite frontend workbench (port 5173)
+make web
+```
+
+### Environment Configuration (`.env.amoy`)
+
+All public testnet configuration is read from `.env.amoy` (or `.env` in proof mode). The file specifies the following variables (variable names only; never commit secrets):
+
+| Environment Variable | Description | Example / Default |
+| :--- | :--- | :--- |
+| `CHAIN_ID` | EVM network identifier | `11155111` (Ethereum Sepolia) |
+| `AMOY_RPC` | HTTPS / WSS JSON-RPC endpoint for target network | `https://eth-sepolia.g.alchemy.com/v2/...` |
+| `RPC_URL_PROOF` | Optional alias for `AMOY_RPC` | Same as `AMOY_RPC` |
+| `EXPLORER_BASE` | Base block explorer URL for linking addresses and txs | `https://sepolia.etherscan.io` |
+| `DEPLOYER_ACCOUNT` | Foundry keystore account name for contract deployment | `amoy-deployer` |
+| `DEPLOYER_ADDR` | Public Ethereum address of the deployer | `0x...` |
+| `PROPOSER_ADDR` | Public Ethereum address of the proposal author | `0x...` |
+| `GOVERNANCE_ADDR` | Public Ethereum address of the DAO governance registry owner | `0x...` |
+| `VERIFIER_ADDR` | Public Ethereum address of the trusted EIP-712 verifier signer | `0x...` |
+| `ATTACKER_ADDR` | Public Ethereum address used in Scenario B1 calldata substitution | `0x...` |
+| `EXPLORER_API_KEY` | Etherscan V2 unified API key (for `scripts/verify_contracts.sh`) | `Etherscan API key` |
+| `PRIORITY_FEE_GWEI`| Optional EIP-1559 tip fee override in gwei | Dynamic `w3.eth.max_priority_fee` |
+
+> [!IMPORTANT]
+> **Secret Hygiene:** Private keys (`DEPLOYER_PK`, `PROPOSER_PK`, `GOVERNANCE_PK`, `VERIFIER_PK`) are used only by `scripts/publish_proof.py` to sign transactions. They are **never logged, committed, stored in the database, returned in API responses, or exposed to the frontend**.
+
+### Verification Rules Coverage Matrix (R1 – R9)
+
+When operating on public testnets without cheat codes (`evm_snapshot` / `evm_revert`), CASCADE 4.1 transitions certain dynamic balance/slot diff rules to strict static calldata and bytecode inspection:
+
+| Rule | Rule Name | Proof Mode Status | Verification Mechanism & Rationale |
+| :---: | :--- | :---: | :--- |
+| **R1** | Proposal Version Binding | **Full** | Recomputes canonical `versionHash` from manifest and asserts exact match with `latestVersion` on `GovernanceRegistry.sol`. |
+| **R2** | Calldata Action Binding | **Full** | Recomputes `actionHash` from submitted calldata (`target`, `value`, `calldata`) and asserts exact match with approved action. Fails on calldata parameter substitution. |
+| **R3** | Financial Envelope Limits | **Full** | Validates Treasury outflow $\le \text{maxAllowedOutflow}$ and recipient token inflow $\ge \text{expectedInflow}$. |
+| **R4** | Prohibited Balance Gains | **Reduced** | Dynamic state tracing of arbitrary third-party accounts requires EVM state snapshots. In Proof Mode, static calldata verification strictly bounds token movements to the declared recipient. Full dynamic tracing is available via local Anvil or Anvil Fork. |
+| **R5** | Token Allowance Immutability | **Reduced** | Static inspection asserts transaction target does not invoke ERC-20 `approve` (`0x095ea7b3`). Dynamic allowance diffing requires state forking. |
+| **R6** | Implementation Slot Immutability | **Reduced** (`[REDUCED IN PROOF MODE]`) | Static opcode inspection scans calldata for UUPS upgrade selectors (`0x3659cfe6`, `0x4f1ef286`, `0x8f283970`, `0x5c19a95c`) and checks EIP-1967 storage slots (`0x3608...` impl, `0xb531...` admin). Dynamic state transition checks require Anvil Fork. |
+| **R7** | Bytecode Selector Whitelist | **Full** | Static opcode scanner traverses runtime bytecode via `PUSH4` opcode heuristic, asserting all candidate dispatch selectors reside within baseline implementation $\cup$ declared selectors. Blocked `BoxEvil` undeclared `sweep()` backdoor (`0x35faa416`). |
+| **R8** | *(Unassigned)* | — | Reserved in specification. |
+| **R9** | Ownership & Role Immutability | **Reduced** | Static calldata check ensures target is not access control admin; dynamic role inspection requires state forking. |
+
+### Anvil Fork Option (Full Dynamic Simulation Against Sepolia State)
+
+To execute full dynamic simulation (including R4, R5, R6, R9 dynamic diffing) against live Sepolia contracts without broadcasting transactions or spending real gas:
+
+```bash
+# 1. Start an Anvil node forking live Ethereum Sepolia state:
+anvil --fork-url "$AMOY_RPC" --port 8546
+
+# 2. Set SIM_FORK_URL in .env:
+SIM_FORK_URL=http://127.0.0.1:8546
+```
+
+When `SIM_FORK_URL` is set, `simulate.py` routes off-chain simulations to the forked Anvil instance, providing full EVM snapshot, impersonation, and state restoration against live Sepolia contract storage.
+
+### Note on `uv run --project backend`
+
+The Python package configuration (`pyproject.toml`) and virtual environment (`.venv`) are located in the `backend/` directory. Running `uv` commands directly from the repository root without `--project backend` will fail with:
+```
+error: No `pyproject.toml` found in current directory or parents
+```
+Always invoke backend commands using `uv run --project backend <command>`, or execute them via the provided root `Makefile` targets.
+
+### Published Proof Artifact (`docs/proof.json`)
+
 The immutable proof artifact is committed to source control at [`docs/proof.json`](file:///Users/althea/Developer/Projects/iiitn-cascade/cascade4.1/docs/proof.json). It contains:
-- Cryptographic commitments (`versionHash`, `actionHash`, `evidenceRoot`).
-- Deployed contract addresses verified on Etherscan/Basescan/Polygonscan.
-- Mined on-chain transaction receipts for version commitment, governance approval, calldata tampering rejection, and verified guarded execution.
+- Cryptographic commitments (`versionHash`, `actionHash`, `evidenceRoot`, `proposalTextHash`).
+- Deployed contract addresses verified on Sepolia Etherscan.
+- Mined on-chain transaction receipts for:
+  1. `commitVersion` by Proposer (`status 1`)
+  2. `approve` by Governance (`status 1`)
+  3. B1 Adversarial Calldata Substitution Revert (`status 0`, revert: `action mismatch`)
+  4. Valid Guarded Execution Payout (`status 1`, Treasury -1M USDC, Recipient +1M USDC)
+  5. Replay Execution Attempt Revert (`status 0`, revert: `already executed`)
+- Before and after balance snapshots confirming exact financial delta.
 - Contains **no private keys, API secrets, or sensitive credentials**.
 
 ### Inspecting Proof in UI
-In the frontend workbench, navigate to **Audit Explorer**. The page calls `GET /proof` and dynamically generates clickable block explorer links for every mined transaction.
+In the frontend workbench, navigate to **Audit Explorer**. The page calls `GET /proof` and dynamically generates clickable block explorer links for every mined transaction, before/after balance changes, and rule coverage matrix.
 
 ---
 
@@ -505,6 +605,7 @@ In the frontend workbench, navigate to **Audit Explorer**. The page calls `GET /
 ## 13. Documentation & Deep-Dive Reference Links
 
 For comprehensive technical breakdowns, consult the dedicated guides in `docs/`:
+- **Evaluator & Judge Walkthrough (5-7 min):** [`docs/EVALUATOR_GUIDE.md`](file:///Users/althea/Developer/Projects/iiitn-cascade/cascade4.1/docs/EVALUATOR_GUIDE.md)
 - **Architecture & Component Map:** [`docs/project-architecture-guide.md`](file:///Users/althea/Developer/Projects/iiitn-cascade/cascade4.1/docs/project-architecture-guide.md)
 - **UI & Control Inventory:** [`docs/frontend-ui-reference.md`](file:///Users/althea/Developer/Projects/iiitn-cascade/cascade4.1/docs/frontend-ui-reference.md)
 - **Live Demo Runbook (3 min vs 15 min):** [`docs/demo-runbook.md`](file:///Users/althea/Developer/Projects/iiitn-cascade/cascade4.1/docs/demo-runbook.md)

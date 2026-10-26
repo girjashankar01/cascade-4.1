@@ -1,3 +1,7 @@
+@import './design/fonts.css';
+@import './design/tokens.css';
+@import './design/components.css';
+@import './features/workbench/workbench.css';
 @import './styles/tokens.css';
 @import './styles/background.css';
 @import './styles/components.css';
@@ -6,20 +10,62 @@
   box-sizing: border-box;
 }
 
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: var(--space-6);
+}
+
+html[data-reduce-motion='true'] {
+  scroll-behavior: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background-color: var(--bg-app);
-  color: var(--text-primary);
-  font-family: var(--font-sans);
+  background-color: var(--color-canvas);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-code, pre, .mono {
-  font-family: var(--font-mono);
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-heading);
+  line-height: var(--leading-heading);
+  color: var(--color-text);
+}
+
+h1 {
+  font-size: var(--text-heading);
+}
+
+h2 {
+  font-size: var(--text-title);
+}
+
+h3 {
+  font-size: var(--text-lead);
+}
+
+code, pre, .mono, .mono-val {
+  font-family: var(--font-technical);
+}
+
+::selection {
+  background-color: var(--color-selection);
+  color: var(--color-selection-ink);
 }
 
 @keyframes spin {

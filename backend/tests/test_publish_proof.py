@@ -19,6 +19,8 @@ import subprocess
 import sys
 import time
 
+from unittest.mock import patch
+
 from eth_account import Account
 from eth_utils import to_checksum_address
 import pytest
@@ -253,6 +255,68 @@ def test_publish_proof_resumability(proof_test_env):
     block_after = w3.eth.block_number
     # No new blocks mined because all transactions were recognized as completed
     assert block_after == block_before
+    assert len(resumed["transactions"]) == 5
+
+
+def test_publish_proof_resumability_after_commit_crash(proof_test_env):
+    """Simulate a crash after the commit tx is mined, then rerun; assert commit is not resent."""
+    crash_proof_path = proof_test_env["tmp_dir"] / "proof.crash.json"
+
+    # Ensure treasury has sufficient tokens
+    token = proof_test_env["token"]
+    treasury = proof_test_env["treasury"]
+    w3 = proof_test_env["w3"]
+    send_tx(w3, PK_DEPLOYER, token.functions.transfer(treasury.address, 1_000_000 * 10**6))
+
+    # Run with a monkeypatched failure right after commit step
+    real_send_tx = __import__("publish_proof").send_tx_1559
+    call_count = 0
+
+    def mock_send_tx(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # First call is commit_version: execute normally
+            return real_send_tx(*args, **kwargs)
+        # Second call is approve: simulate crash!
+        raise KeyboardInterrupt("Simulated crash right after commit_version")
+
+    with patch("publish_proof.send_tx_1559", side_effect=mock_send_tx):
+        try:
+            publish_proof(
+                run_id="crash01",
+                dry_run=False,
+                with_replay=False,
+                rpc_url=proof_test_env["rpc_url"],
+                deployments_path=proof_test_env["dep_path"],
+                env_path=proof_test_env["env_path"],
+                proof_path=crash_proof_path,
+            )
+        except KeyboardInterrupt:
+            pass
+
+    # Verify that commit tx was recorded in proof JSON before crash
+    assert crash_proof_path.exists()
+    with open(crash_proof_path, "r", encoding="utf-8") as f:
+        partial_data = json.load(f)
+    assert len(partial_data["transactions"]) == 1
+    commit_tx_hash = partial_data["transactions"][0]["tx_hash"]
+    assert commit_tx_hash.startswith("0x")
+
+    # Now rerun publish_proof normally to resume
+    resumed = publish_proof(
+        run_id="crash01",
+        dry_run=False,
+        with_replay=True,
+        rpc_url=proof_test_env["rpc_url"],
+        deployments_path=proof_test_env["dep_path"],
+        env_path=proof_test_env["env_path"],
+        proof_path=crash_proof_path,
+    )
+
+    # Commit tx must not have been resent; its recorded hash is preserved
+    assert resumed["transactions"][0]["tx_hash"] == commit_tx_hash
+    # All 5 transactions are now completed
     assert len(resumed["transactions"]) == 5
 
 

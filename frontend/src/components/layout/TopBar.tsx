@@ -2,6 +2,7 @@ import { PlayIcon, RefreshCwIcon } from '../common/Icons';
 import type { NavTab } from './Sidebar';
 import type { BalancesInfo } from '../../api/types';
 import { ReadOnlyWalletButton } from './ReadOnlyWalletButton';
+import { ThemeToggle } from '../ui/ThemeToggle';
 
 interface TopBarProps {
   currentTab: NavTab;
@@ -56,12 +57,15 @@ export function TopBar({
           <div className="env-badge" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', padding: '4px 10px' }}>
             <span>Treasury: <strong style={{ color: 'var(--accent-mint)' }}>{balances.treasury.token_balance.toLocaleString()} USDC</strong></span>
             <span style={{ color: 'var(--border-default)' }}>|</span>
-            <span>Recipient: <strong style={{ color: '#38bdf8' }}>{balances.recipient.token_balance.toLocaleString()} USDC</strong></span>
+            <span>Recipient: <strong style={{ color: 'var(--color-text)' }}>{balances.recipient.token_balance.toLocaleString()} USDC</strong></span>
           </div>
         )}
 
         {/* Read-Only Wallet Button */}
         <ReadOnlyWalletButton />
+
+        {/* Theme Toggle (Dark / Light) */}
+        <ThemeToggle className="btn-sm" />
 
         {/* Scenario Runner Pill */}
         <button
@@ -71,7 +75,7 @@ export function TopBar({
           title="Open Scenario Runner"
         >
           <PlayIcon width={12} height={12} />
-          <span>Run Scenarios (A / B1 / C)</span>
+          <span>Run Scenarios</span>
         </button>
 
         {/* Refresh Button */}
@@ -88,3 +92,5 @@ export function TopBar({
     </header>
   );
 }
+
+export default TopBar;

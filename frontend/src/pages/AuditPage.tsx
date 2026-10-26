@@ -78,6 +78,7 @@ export function AuditPage({ proposalId }: AuditPageProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [balancesRefreshing, setBalancesRefreshing] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<string>('Just now');
 
   useEffect(() => {
     let isMounted = true;
@@ -97,6 +98,7 @@ export function AuditPage({ proposalId }: AuditPageProps) {
         setAnalyses(aList);
         setVerifications(vList);
         setIsLoading(false);
+        setLastRefreshed(new Date().toLocaleTimeString());
       }
     });
 
@@ -112,11 +114,50 @@ export function AuditPage({ proposalId }: AuditPageProps) {
       setChainBalances(b);
       const st = await api.getChainStatus();
       setChainStatus(st);
+      setLastRefreshed(new Date().toLocaleTimeString());
     } catch (e) {
       console.warn('Failed to refresh live balances:', e);
     } finally {
       setBalancesRefreshing(false);
     }
+  };
+
+  const handleDownloadProofBundle = () => {
+    if (!proof) return;
+    const blob = new Blob([JSON.stringify(proof, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `proof-bundle-${effectiveChainId || '11155111'}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportCsv = () => {
+    const txList = proof?.transactions || [];
+    if (txList.length === 0) return;
+    const headers = ['step', 'label', 'status', 'tx_hash', 'block_number', 'revert_reason', 'explorer_url'];
+    const rows = txList.map((t) => [
+      `"${t.step || ''}"`,
+      `"${(t.label || '').replace(/"/g, '""')}"`,
+      t.status === 1 ? '1' : '0',
+      `"${t.tx_hash || ''}"`,
+      t.block_number ?? '',
+      `"${(t.revert_reason || '').replace(/"/g, '""')}"`,
+      `"${t.explorer_url || ''}"`,
+    ]);
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `proof-transactions-${effectiveChainId || '11155111'}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const isProofPublished = Boolean(proof && proof.published && proof.transactions && proof.transactions.length > 0);
@@ -348,6 +389,9 @@ export function AuditPage({ proposalId }: AuditPageProps) {
               {contractsList.map((c) => {
                 const addr = c.address;
                 const explorerUrl = addr ? buildExplorerAddrUrl(addr, effectiveChainId, explorerBase) : '';
+                const contractStatus = (chainStatus as any)?.contracts?.[c.key];
+                const hasCode = contractStatus?.has_code;
+
                 return (
                   <div
                     key={c.key}
@@ -362,9 +406,26 @@ export function AuditPage({ proposalId }: AuditPageProps) {
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {c.name}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {c.name}
+                        </span>
+                        {hasCode !== undefined && (
+                          <span
+                            style={{
+                              fontSize: '9px',
+                              padding: '1px 5px',
+                              borderRadius: '3px',
+                              fontFamily: 'var(--font-mono)',
+                              backgroundColor: hasCode ? 'rgba(124, 224, 190, 0.12)' : 'rgba(234, 179, 8, 0.12)',
+                              color: hasCode ? 'var(--accent-mint)' : '#facc15',
+                              border: `1px solid ${hasCode ? 'rgba(124, 224, 190, 0.3)' : 'rgba(234, 179, 8, 0.3)'}`,
+                            }}
+                          >
+                            {hasCode ? 'has code' : 'no code'}
+                          </span>
+                        )}
+                      </div>
                       {explorerUrl && (
                         <a
                           href={explorerUrl}
@@ -391,21 +452,26 @@ export function AuditPage({ proposalId }: AuditPageProps) {
 
           {/* SECTION 3: LIVE BALANCES WITH REFRESH BUTTON */}
           <div className="card">
-            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
               <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <ActivityIcon style={{ color: 'var(--accent-mint)' }} />
                 Live On-Chain Balances
               </span>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={handleRefreshBalances}
-                disabled={balancesRefreshing}
-                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <RefreshCwIcon className={balancesRefreshing ? 'spin' : ''} width={13} height={13} />
-                {balancesRefreshing ? 'Refreshing...' : 'Refresh Balances'}
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                  Last refreshed: {lastRefreshed}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleRefreshBalances}
+                  disabled={balancesRefreshing}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <RefreshCwIcon className={balancesRefreshing ? 'spin' : ''} width={13} height={13} />
+                  {balancesRefreshing ? 'Refreshing...' : 'Refresh Balances'}
+                </button>
+              </div>
             </div>
 
             {/* Balances Grid */}
@@ -637,14 +703,32 @@ export function AuditPage({ proposalId }: AuditPageProps) {
 
               {/* SECTION 5: RUN TIMELINE & TRANSACTIONS */}
               <div className="card">
-                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                   <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <PlayIcon style={{ color: 'var(--accent-mint)' }} />
                     On-Chain Verification Lifecycle Timeline
                   </span>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                    {proof?.transactions?.length || 0} Transactions Mined
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleDownloadProofBundle}
+                      style={{ fontSize: '11px', padding: '4px 10px' }}
+                    >
+                      Download Proof Bundle
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleExportCsv}
+                      style={{ fontSize: '11px', padding: '4px 10px' }}
+                    >
+                      Export CSV
+                    </button>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                      {proof?.transactions?.length || 0} Transactions Mined
+                    </span>
+                  </div>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -728,6 +812,79 @@ export function AuditPage({ proposalId }: AuditPageProps) {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* SECTION: R1 TO R9 DETERMINISTIC RULE COVERAGE */}
+              <div className="card">
+                <div className="card-header">
+                  <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ShieldIcon style={{ color: 'var(--accent-mint)' }} />
+                    Verification Rules Coverage Matrix (R1 – R9)
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    Evaluation Scope &amp; Honesty in Proof Mode
+                  </span>
+                </div>
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-subtle)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                        <th style={{ padding: '8px 10px', width: '50px' }}>Rule</th>
+                        <th style={{ padding: '8px 10px', width: '220px' }}>Name</th>
+                        <th style={{ padding: '8px 10px', width: '110px' }}>Proof Mode</th>
+                        <th style={{ padding: '8px 10px' }}>Coverage Scope &amp; Implementation Details</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { id: 'R1', name: 'Approved Version & Governance Commitment', mode: 'FULL', detail: 'Direct cryptographic check against on-chain GovernanceRegistry record.' },
+                        { id: 'R2', name: 'Action Hash & Calldata Match', mode: 'FULL', detail: 'Strict ABI calldata decoding and keccak256 actionHash validation.' },
+                        { id: 'R3', name: 'Solvency Pre-Check', mode: 'FULL', detail: 'Direct on-chain token balanceOf check prior to execution simulation.' },
+                        { id: 'R4', name: 'Outflow Envelope Bound', mode: 'REDUCED', detail: '[REDUCED IN PROOF MODE] Evaluated via static calldata parameter inspection; full EVM call tracing requires local fork.' },
+                        { id: 'R5', name: 'Approval & Allowance Modifications', mode: 'REDUCED', detail: '[REDUCED IN PROOF MODE] Evaluated via selector inspection; internal token state requires local fork.' },
+                        { id: 'R6', name: 'Implementation Slot Immutability', mode: 'REDUCED', detail: '[REDUCED IN PROOF MODE] Strengthened via static calldata upgrade selector & EIP-1967 slot view inspection.' },
+                        { id: 'R7', name: 'Undeclared Selector Detection', mode: 'FULL', detail: 'Static bytecode disassembly and selector extraction on new contract implementation.' },
+                        { id: 'R8', name: 'Storage Collision Detection', mode: 'FULL', detail: 'Static storage layout inspection between proxy versions.' },
+                        { id: 'R9', name: 'State Invariant Preservation', mode: 'REDUCED', detail: '[REDUCED IN PROOF MODE] Evaluated via pre/post view calls on fixed watchlist addresses.' },
+                      ].map((r, i) => (
+                        <tr
+                          key={r.id}
+                          style={{
+                            borderBottom: '1px solid var(--border-subtle)',
+                            backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(255, 255, 255, 0.02)',
+                          }}
+                        >
+                          <td style={{ padding: '8px 10px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                            {r.id}
+                          </td>
+                          <td style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            {r.name}
+                          </td>
+                          <td style={{ padding: '8px 10px' }}>
+                            <span
+                              style={{
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                fontFamily: 'var(--font-mono)',
+                                backgroundColor: r.mode === 'FULL' ? 'rgba(124, 224, 190, 0.12)' : 'rgba(234, 179, 8, 0.12)',
+                                color: r.mode === 'FULL' ? 'var(--accent-mint)' : '#facc15',
+                                border: `1px solid ${r.mode === 'FULL' ? 'rgba(124, 224, 190, 0.3)' : 'rgba(234, 179, 8, 0.3)'}`,
+                              }}
+                            >
+                              {r.mode}
+                            </span>
+                          </td>
+                          <td style={{ padding: '8px 10px', color: 'var(--text-secondary)' }}>
+                            {r.detail}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </>

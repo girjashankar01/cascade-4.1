@@ -223,6 +223,32 @@ def load_proof_env(path: Union[str, Path] = ".env.amoy", w3: Optional[Web3] = No
     )
 
 
+def wait_for_receipt_resilient(
+    w3: Web3,
+    tx_hash: Any,
+    timeout: int = 120,
+    poll_interval: float = 2.0,
+) -> Any:
+    """Poll for transaction receipt handling HTTP 429 rate limits with exponential backoff."""
+    start_time = time.time()
+    backoff = 2.0
+    while time.time() - start_time < timeout:
+        try:
+            rcpt = w3.eth.get_transaction_receipt(tx_hash)
+            if rcpt is not None:
+                return rcpt
+        except Exception as e:
+            err_msg = str(e).lower()
+            if "429" in err_msg or "too many requests" in err_msg:
+                logger.warning(f"RPC rate limited (HTTP 429) while polling receipt; backing off {backoff:.1f}s")
+                time.sleep(backoff)
+                backoff = min(backoff * 1.5, 20.0)
+                continue
+            logger.debug(f"Receipt polling transient error: {e}")
+        time.sleep(poll_interval)
+    return None
+
+
 def send_tx_1559(
     w3: Web3,
     private_key: str,
@@ -238,8 +264,9 @@ def send_tx_1559(
     - Builds Type 2 tx: maxPriorityFeePerGas = max(PRIORITY_FEE_GWEI, w3.eth.max_priority_fee),
       maxFeePerGas = 2 * latest baseFee + tip.
     - Resolves nonce from get_transaction_count(addr, "pending") with an in-memory tracker.
-    - Retries once on "replacement transaction underpriced" or "nonce too low" with fees bumped 25%.
-    - Waits up to wait_timeout.
+    - Retries on "replacement transaction underpriced" or "nonce too low" with fees bumped 25%.
+    - If pending after wait_timeout, bumps fees 25% once before failing with resume guidance.
+    - Handles HTTP 429 rate limits during polling with exponential backoff.
     - Returns dict {tx_hash, status, block_number, receipt}. Raises if status == 0 unless expect_revert=True.
     """
     account = Account.from_key(private_key)
@@ -292,12 +319,10 @@ def send_tx_1559(
         err_msg = str(exc).lower()
         if "replacement transaction underpriced" in err_msg or "nonce too low" in err_msg:
             logger.warning(f"send_raw_transaction encountered '{exc}'; retrying once with 25% bumped fees...")
-            # Bump priority fee and max fee by 25%
             bumped_tip = int(max_priority_fee * 1.25) + 1
             bumped_max_fee = int(max_fee_per_gas * 1.25) + 1
 
             if "nonce too low" in err_msg:
-                # Refresh nonce from node
                 with _NONCE_LOCK:
                     pending = w3.eth.get_transaction_count(caller_addr, "pending")
                     nonce = max(pending, _ADDRESS_NONCES.get(caller_addr, 0) + 1)
@@ -330,10 +355,51 @@ def send_tx_1559(
         else:
             raise
 
-    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=wait_timeout)
+    receipt = wait_for_receipt_resilient(w3, tx_hash, timeout=wait_timeout)
     hex_hash = tx_hash.hex() if hasattr(tx_hash, "hex") else str(tx_hash)
     if not hex_hash.startswith("0x"):
         hex_hash = "0x" + hex_hash
+
+    # Handle stuck pending tx after wait_timeout: bump fees 25% once
+    if receipt is None:
+        logger.warning(f"Transaction {hex_hash} pending after {wait_timeout}s; attempting 25% fee bump...")
+        bumped_tip = int(max_priority_fee * 1.25) + 1
+        bumped_max_fee = int(max_fee_per_gas * 1.25) + 1
+        tx_params["nonce"] = nonce
+        tx_params["maxPriorityFeePerGas"] = bumped_tip
+        tx_params["maxFeePerGas"] = bumped_max_fee
+
+        try:
+            if hasattr(tx_or_fn, "build_transaction"):
+                tx_bump = tx_or_fn.build_transaction(tx_params)
+            else:
+                tx_bump = {**tx_params, **tx_or_fn, "nonce": nonce, "gas": tx_gas, "value": tx_val}
+
+            signed_bump = w3.eth.account.sign_transaction(tx_bump, private_key)
+            bump_tx_hash = w3.eth.send_raw_transaction(signed_bump.raw_transaction)
+            bump_hex = bump_tx_hash.hex() if hasattr(bump_tx_hash, "hex") else str(bump_tx_hash)
+            if not bump_hex.startswith("0x"):
+                bump_hex = "0x" + bump_hex
+            logger.info(f"Broadcast replacement transaction: {bump_hex}")
+
+            # Check replacement receipt
+            receipt = wait_for_receipt_resilient(w3, bump_tx_hash, timeout=30)
+            if receipt is not None:
+                hex_hash = bump_hex
+            else:
+                raise TimeoutError(
+                    f"Transaction still pending after {wait_timeout}s and 25% fee bump. "
+                    f"Pending tx_hash: {bump_hex} (original: {hex_hash}). "
+                    f"Resume by running: uv run --project backend python scripts/publish_proof.py"
+                )
+        except Exception as bump_err:
+            if isinstance(bump_err, TimeoutError):
+                raise
+            raise TimeoutError(
+                f"Transaction still pending after {wait_timeout}s. "
+                f"Fee bump replacement failed: {bump_err}. Pending tx_hash: {hex_hash}. "
+                f"Resume by running: uv run --project backend python scripts/publish_proof.py"
+            ) from bump_err
 
     res = {
         "tx_hash": hex_hash,
@@ -349,7 +415,7 @@ def send_tx_1559(
         if not expect_revert:
             raise RuntimeError(
                 f"Transaction {hex_hash} mined with failure status 0 at block {receipt.blockNumber}. "
-                f"Revert reason: {reason}"
+                f"Revert reason: {reason}. Valid step failed, aborting run."
             )
 
     return res

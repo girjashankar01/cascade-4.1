@@ -342,7 +342,8 @@ export interface ProofTransaction {
 
 export interface ProofContract {
   address: string;
-  explorer_url: string;
+  explorer_url?: string;
+  has_code?: boolean;
 }
 
 export interface DryRunResponse {
@@ -394,6 +395,10 @@ export interface ChainStatusResponse {
     treasury?: string;
     executor?: string;
   };
+  contracts?: Record<string, {
+    address: string;
+    has_code: boolean;
+  }>;
   explorer_base: string;
 }
 
@@ -459,15 +464,15 @@ export interface ProofResponse {
   contracts?: Record<string, ProofContract>;
   transactions?: ProofTransaction[];
   balances_before?: {
-    roles?: Record<string, { address: string; balance_eth: number }>;
+    roles?: Record<string, { address: string; balance_eth?: number; eth?: number; token?: number }>;
     treasury_token_balance?: number;
     recipient_token_balance?: number;
   };
   balances_after?: {
-    roles?: Record<string, { address: string; balance_eth: number }>;
+    roles?: Record<string, { address: string; balance_eth?: number; eth?: number; token?: number }>;
     treasury_token_balance?: number;
     recipient_token_balance?: number;
   };
-  dryrun?: DryRunResponse | null;
+  dryrun?: Partial<DryRunResponse> | null;
   message?: string;
 }
