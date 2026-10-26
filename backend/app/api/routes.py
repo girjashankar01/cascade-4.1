@@ -1228,3 +1228,53 @@ def run_scenario_endpoint(
             detail=f"Scenario {name} failed: {e}",
         ) from e
 
+
+@router.get("/proof", response_model=Dict[str, Any])
+def get_proof_endpoint() -> Dict[str, Any]:
+    """Read and return public testnet proof artifact from docs/proof.json.
+
+    If proof.json is missing or empty, returns published=False with a clear message.
+    """
+    from pathlib import Path
+    repo_root = Path(__file__).resolve().parents[3]
+    proof_path = repo_root / "docs" / "proof.json"
+    if not proof_path.exists():
+        return {
+            "published": False,
+            "chain_id": None,
+            "run_id": None,
+            "pid": None,
+            "contracts": {},
+            "transactions": [],
+            "message": "No proof published yet. Run scripts/publish_proof.py to broadcast and publish proof.",
+        }
+    try:
+        with open(proof_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not data or not isinstance(data, dict):
+            return {
+                "published": False,
+                "chain_id": None,
+                "run_id": None,
+                "pid": None,
+                "contracts": {},
+                "transactions": [],
+                "message": "Proof file is empty or invalid.",
+            }
+        return {
+            "published": True,
+            **data,
+            "message": "Proof loaded successfully.",
+        }
+    except Exception as e:
+        logger.warning(f"Error reading docs/proof.json: {e}")
+        return {
+            "published": False,
+            "chain_id": None,
+            "run_id": None,
+            "pid": None,
+            "contracts": {},
+            "transactions": [],
+            "message": f"Error reading proof file: {e}",
+        }
+
