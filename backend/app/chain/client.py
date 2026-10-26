@@ -170,7 +170,7 @@ def commit_version_onchain(
     latest_ver_num, stored_vhash, stored_ahash, stored_eroot = registry.functions.latestVersion(pid_b32).call()
 
     return {
-        "tx_hash": receipt.transactionHash.hex(),
+        "tx_hash": f"0x{receipt.transactionHash.hex().removeprefix('0x')}",
         "block_number": receipt.blockNumber,
         "version_number": latest_ver_num,
         "stored_version_hash": "0x" + stored_vhash.hex().lower(),
@@ -204,7 +204,7 @@ def approve_version_onchain(
     app_vhash, app_ahash, app_eroot = registry.functions.approved(pid_b32).call()
 
     return {
-        "tx_hash": receipt.transactionHash.hex(),
+        "tx_hash": f"0x{receipt.transactionHash.hex().removeprefix('0x')}",
         "block_number": receipt.blockNumber,
         "approved_version_hash": "0x" + app_vhash.hex().lower(),
         "approved_action_hash": "0x" + app_ahash.hex().lower(),

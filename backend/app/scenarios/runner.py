@@ -80,6 +80,9 @@ def load_saved_deployments() -> Optional[Dict[str, Any]]:
     return None
 
 
+_IN_MEMORY_DEPLOYMENTS: Dict[str, Dict[str, Any]] = {}
+
+
 def ensure_deployments(
     w3: Web3,
     rpc_url: Optional[str] = None,
@@ -88,25 +91,40 @@ def ensure_deployments(
 ) -> Dict[str, Any]:
     """Ensure core contracts are deployed and functional on the connected chain."""
     verify_local_chain(w3)
+    target_rpc = rpc_url or DEFAULT_RPC_URL
+
+    if not force_redeploy and target_rpc in _IN_MEMORY_DEPLOYMENTS:
+        in_mem = _IN_MEMORY_DEPLOYMENTS[target_rpc]
+        try:
+            executor_addr = Web3.to_checksum_address(in_mem["executor"])
+            code = w3.eth.get_code(executor_addr)
+            if code and len(code) > 2 and in_mem.get("box_proxy"):
+                return in_mem
+        except Exception:
+            pass
+
     import sys
     scripts_dir = Path(__file__).resolve().parents[3] / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
     from deploy_and_seed import deploy_and_seed
 
-    saved = load_saved_deployments()
+    saved = load_saved_deployments() if (rpc_url is None or rpc_url == DEFAULT_RPC_URL) else None
     if not force_redeploy and saved:
         try:
             executor_addr = Web3.to_checksum_address(saved["executor"])
             code = w3.eth.get_code(executor_addr)
             if code and len(code) > 2 and saved.get("box_proxy") and saved.get("box_evil") and saved.get("box_v2"):
+                _IN_MEMORY_DEPLOYMENTS[target_rpc] = saved
                 return saved
         except Exception:
             pass
 
     # Redeploy and seed (only persist manifest if running against default chain, not test instance)
     logger.info("Deploying fresh contracts and seeding clean state...")
-    return deploy_and_seed(w3=w3, rpc_url=rpc_url, db_path=db_path, save_deployments=(rpc_url is None))
+    deps = deploy_and_seed(w3=w3, rpc_url=rpc_url, db_path=db_path, save_deployments=(rpc_url is None))
+    _IN_MEMORY_DEPLOYMENTS[target_rpc] = deps
+    return deps
 
 
 def run_scenario_a(
@@ -515,6 +533,8 @@ def run_scenario_c(
     from deploy_and_seed import deploy_and_seed
 
     deployments = deploy_and_seed(w3=w3, rpc_url=rpc_url, db_path=db_path, save_deployments=(rpc_url is None))
+    target_rpc = rpc_url or DEFAULT_RPC_URL
+    _IN_MEMORY_DEPLOYMENTS[target_rpc] = deployments
 
     steps.append(
         {

@@ -766,10 +766,18 @@ def get_version_chain(pid: str) -> List[Dict[str, Any]]:
                     "action_hash": row["action_hash"],
                     "evidence_root": row["evidence_root"],
                     "prev_version_hash": row["prev_version_hash"],
-                    "commit_tx_hash": row["commit_tx_hash"],
+                    "commit_tx_hash": (
+                        f"0x{row['commit_tx_hash'].removeprefix('0x')}"
+                        if row["commit_tx_hash"]
+                        else None
+                    ),
                     "commit_block_number": row["commit_block_number"],
                     "committed_at": row["committed_at"],
-                    "approve_tx_hash": row["approve_tx_hash"],
+                    "approve_tx_hash": (
+                        f"0x{row['approve_tx_hash'].removeprefix('0x')}"
+                        if row["approve_tx_hash"]
+                        else None
+                    ),
                     "approve_block_number": row["approve_block_number"],
                     "approved_at": row["approved_at"],
                     "onchain_verified": bool(row["onchain_verified"]),
